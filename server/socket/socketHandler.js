@@ -6,46 +6,44 @@ const socketHandler = (io) => {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // User join karta hai
     socket.on('user-online', (userId) => {
       onlineUsers.set(userId, socket.id);
       io.emit('online-users', Array.from(onlineUsers.keys()));
     });
 
-    // Message send karna
     socket.on('send-message', async (data) => {
-      const { sender, receiver, groupId, content, type, fileUrl, isSelfDestruct } = data;
+      try {
+        const { sender, receiver, groupId, content, type, fileUrl, isSelfDestruct } = data;
 
-      const message = await Message.create({
-        sender,
-        receiver: receiver || null,
-        groupId: groupId || null,
-        content,
-        type: type || 'text',
-        fileUrl: fileUrl || '',
-        isSelfDestruct: isSelfDestruct || false
-      });
+        const message = await Message.create({
+          sender,
+          receiver: receiver || null,
+          groupId: groupId || null,
+          content,
+          type: type || 'text',
+          fileUrl: fileUrl || '',
+          isSelfDestruct: isSelfDestruct || false,
+        });
 
-      const populated = await message.populate('sender', 'name avatar');
+        const populated = await message.populate('sender', 'name avatar');
 
-      // Receiver ko message bhejo
-      if (receiver) {
-        const receiverSocketId = onlineUsers.get(receiver);
-        if (receiverSocketId) {
-          io.to(receiverSocketId).emit('receive-message', populated);
+        if (receiver) {
+          const receiverSocketId = onlineUsers.get(receiver);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit('receive-message', populated);
+          }
         }
-      }
 
-      // Group message
-      if (groupId) {
-        socket.to(groupId).emit('receive-message', populated);
-      }
+        if (groupId) {
+          socket.to(groupId).emit('receive-message', populated);
+        }
 
-      // Typing stop
-      socket.emit('message-sent', populated);
+        socket.emit('message-sent', populated);
+      } catch (err) {
+        console.error('Socket message error:', err.message);
+      }
     });
 
-    // Typing indicator
     socket.on('typing', ({ sender, receiver }) => {
       const receiverSocketId = onlineUsers.get(receiver);
       if (receiverSocketId) {
@@ -60,7 +58,6 @@ const socketHandler = (io) => {
       }
     });
 
-    // Read receipt
     socket.on('message-read', ({ messageId, sender }) => {
       const senderSocketId = onlineUsers.get(sender);
       if (senderSocketId) {
@@ -68,12 +65,37 @@ const socketHandler = (io) => {
       }
     });
 
-    // Group join
     socket.on('join-group', (groupId) => {
       socket.join(groupId);
     });
 
-    // Disconnect
+    // Video/Voice Call Events
+    socket.on('call-user', ({ to, from, signal, callerName, isVoiceOnly }) => {
+      const receiverSocketId = onlineUsers.get(to);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('incoming-call', {
+          from,
+          signal,
+          callerName,
+          isVoiceOnly,
+        });
+      }
+    });
+
+    socket.on('answer-call', ({ to, signal }) => {
+      const callerSocketId = onlineUsers.get(to);
+      if (callerSocketId) {
+        io.to(callerSocketId).emit('call-accepted', signal);
+      }
+    });
+
+    socket.on('end-call', ({ to }) => {
+      const receiverSocketId = onlineUsers.get(to);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('call-ended');
+      }
+    });
+
     socket.on('disconnect', () => {
       onlineUsers.forEach((socketId, userId) => {
         if (socketId === socket.id) {
