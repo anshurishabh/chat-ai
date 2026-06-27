@@ -15,6 +15,7 @@ const messageRoutes = require('./routes/messageRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,6 +40,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'NexChat server is running! 🚀' });

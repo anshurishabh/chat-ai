@@ -1,4 +1,5 @@
 const Message = require('../models/Message');
+const { sendNotification } = require('../controllers/notificationController');
 
 const onlineUsers = new Map();
 
@@ -31,6 +32,15 @@ const socketHandler = (io) => {
           const receiverSocketId = onlineUsers.get(receiver);
           if (receiverSocketId) {
             io.to(receiverSocketId).emit('receive-message', populated);
+          }
+
+          // Push notification agar user offline hai
+          if (!onlineUsers.has(receiver)) {
+            await sendNotification(receiver, {
+              title: `New message from ${populated.sender.name}`,
+              body: type === 'text' ? content : '📎 Sent an attachment',
+              icon: '/icon.png',
+            });
           }
         }
 
@@ -69,16 +79,10 @@ const socketHandler = (io) => {
       socket.join(groupId);
     });
 
-    // Video/Voice Call Events
     socket.on('call-user', ({ to, from, signal, callerName, isVoiceOnly }) => {
       const receiverSocketId = onlineUsers.get(to);
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit('incoming-call', {
-          from,
-          signal,
-          callerName,
-          isVoiceOnly,
-        });
+        io.to(receiverSocketId).emit('incoming-call', { from, signal, callerName, isVoiceOnly });
       }
     });
 
