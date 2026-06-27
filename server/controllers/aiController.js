@@ -1,77 +1,50 @@
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require('groq-sdk');
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const getSmartReplies = async (req, res) => {
   try {
     const { messages } = req.body;
-
-    const context = messages
-      .map((m) => `${m.sender}: ${m.content}`)
-      .join("\n");
-
-    const prompt = `Based on this conversation, suggest 3 short smart reply options (max 8 words each). Return ONLY a JSON array like:
-["reply1","reply2","reply3"]
-
-Conversation:
-${context}`;
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const context = messages.map(m => `${m.sender}: ${m.content}`).join('\n');
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are a smart reply assistant. Return ONLY a JSON array with 3 short reply options (max 8 words each). Example: ["Sure!", "Thanks for sharing", "Tell me more"]' },
+        { role: 'user', content: `Conversation:\n${context}\n\nSuggest 3 smart replies:` }
+      ],
+      max_tokens: 100,
     });
-
-    const text = result.text;
-    const clean = text.replace(/```json|```/g, "").trim();
+    const text = completion.choices[0].message.content;
+    const clean = text.replace(/```json|```/g, '').trim();
     const replies = JSON.parse(clean);
-
     res.json({ replies });
   } catch (error) {
-    console.error("Smart Replies Error:", error);
+    console.error('Smart Replies Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
 
 const chatWithAI = async (req, res) => {
   try {
-    console.log(req.body);
-    console.log(
-      "GEMINI KEY:",
-      process.env.GEMINI_API_KEY ? "Found" : "NOT FOUND"
-    );
-
+    console.log('GROQ KEY:', process.env.GROQ_API_KEY ? 'Found' : 'NOT FOUND');
     const { message, history } = req.body;
-
-    const historyText =
-      history?.map((h) => `${h.role}: ${h.content}`).join("\n") || "";
-
-    const prompt = `You are NexChat AI Assistant — a helpful, friendly, and smart assistant inside a chat application.
-
-Keep responses concise and conversational.
-
-${historyText ? `Previous conversation:\n${historyText}\n` : ""}
-
-User: ${message}
-Assistant:`;
-
-    console.log("before");
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const historyMessages = history?.map(h => ({
+      role: h.role === 'assistant' ? 'assistant' : 'user',
+      content: h.content
+    })) || [];
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are NexChat AI Assistant — a helpful, friendly, and smart assistant inside a chat application. Keep responses concise and conversational.' },
+        ...historyMessages,
+        { role: 'user', content: message }
+      ],
+      max_tokens: 500,
     });
-
-    console.log("after");
-
-    const reply = result.text;
-
-    console.log(reply);
-
+    const reply = completion.choices[0].message.content;
     res.json({ reply });
   } catch (error) {
-    console.error("Gemini Chat Error:", error);
+    console.error('Groq Chat Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -79,22 +52,18 @@ Assistant:`;
 const translateMessage = async (req, res) => {
   try {
     const { text, targetLanguage } = req.body;
-
-    const prompt = `Translate the following text to ${targetLanguage}. Return ONLY the translated text.
-
-Text:
-${text}`;
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are a translator. Return ONLY the translated text, nothing else.' },
+        { role: 'user', content: `Translate to ${targetLanguage}: ${text}` }
+      ],
+      max_tokens: 200,
     });
-
-    const translated = result.text.trim();
-
+    const translated = completion.choices[0].message.content.trim();
     res.json({ translated });
   } catch (error) {
-    console.error("Translate Error:", error);
+    console.error('Translate Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -102,32 +71,19 @@ ${text}`;
 const detectSentiment = async (req, res) => {
   try {
     const { text } = req.body;
-
-    const prompt = `Analyze the sentiment and emotion of this message.
-
-Return ONLY JSON:
-
-{
-  "sentiment":"positive",
-  "emotion":"happy",
-  "emoji":"😊"
-}
-
-Message:
-${text}`;
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are a sentiment analyzer. Return ONLY a JSON object like: {"sentiment": "positive", "emotion": "happy", "emoji": "😊"}' },
+        { role: 'user', content: `Analyze: ${text}` }
+      ],
+      max_tokens: 100,
     });
-
-    const raw = result.text.replace(/```json|```/g, "").trim();
-
+    const raw = completion.choices[0].message.content.replace(/```json|```/g, '').trim();
     const data = JSON.parse(raw);
-
     res.json(data);
   } catch (error) {
-    console.error("Sentiment Error:", error);
+    console.error('Sentiment Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -135,26 +91,19 @@ ${text}`;
 const summarizeChat = async (req, res) => {
   try {
     const { messages } = req.body;
-
-    const chatText = messages
-      .map((m) => `${m.sender?.name || "User"}: ${m.content}`)
-      .join("\n");
-
-    const prompt = `Summarize this chat in 3-4 lines.
-
-Conversation:
-${chatText}`;
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const chatText = messages.map(m => `${m.sender?.name || 'User'}: ${m.content}`).join('\n');
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are a chat summarizer. Summarize in 3-4 concise lines.' },
+        { role: 'user', content: `Summarize this chat:\n${chatText}` }
+      ],
+      max_tokens: 200,
     });
-
-    const summary = result.text.trim();
-
+    const summary = completion.choices[0].message.content.trim();
     res.json({ summary });
   } catch (error) {
-    console.error("Summary Error:", error);
+    console.error('Summary Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -162,33 +111,20 @@ ${chatText}`;
 const correctGrammar = async (req, res) => {
   try {
     const { text } = req.body;
-
-    const prompt = `Correct grammar and spelling.
-
-Return ONLY corrected text.
-
-Text:
-${text}`;
-
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: 'You are a grammar corrector. Return ONLY the corrected text, nothing else.' },
+        { role: 'user', content: `Correct grammar: ${text}` }
+      ],
+      max_tokens: 200,
     });
-
-    const corrected = result.text.trim();
-
+    const corrected = completion.choices[0].message.content.trim();
     res.json({ corrected });
   } catch (error) {
-    console.error("Grammar Error:", error);
+    console.error('Grammar Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
 
-module.exports = {
-  getSmartReplies,
-  chatWithAI,
-  translateMessage,
-  detectSentiment,
-  summarizeChat,
-  correctGrammar,
-};
+module.exports = { getSmartReplies, chatWithAI, translateMessage, detectSentiment, summarizeChat, correctGrammar };
