@@ -3,6 +3,8 @@ import { io } from 'socket.io-client';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
 
+const SOCKET_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:5000';
+
 let socketInstance = null;
 
 const useSocket = () => {
@@ -14,7 +16,7 @@ const useSocket = () => {
     if (!user) return;
 
     if (!socketInstance) {
-      socketInstance = io('http://localhost:5000');
+      socketInstance = io(SOCKET_URL);
     }
 
     socketInstance.emit('user-online', user._id);
@@ -68,7 +70,6 @@ const useSocket = () => {
   const sendTyping = (data) => socketInstance?.emit('typing', data);
   const stopTyping = (data) => socketInstance?.emit('stop-typing', data);
   const joinGroup = (groupId) => socketInstance?.emit('join-group', groupId);
-
   const callUser = (data) => socketInstance?.emit('call-user', data);
   const answerCall = (data) => socketInstance?.emit('answer-call', data);
   const endCall = (data) => socketInstance?.emit('end-call', data);
