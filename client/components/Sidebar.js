@@ -2,12 +2,14 @@
 import { useEffect, useState } from 'react';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
+import ProfileModal from './ProfileModal';
 
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
   const { users, getUsers, selectedUser, setSelectedUser, onlineUsers, groups, getGroups, setSelectedGroup, selectedGroup } = useChatStore();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('chats');
+  const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
     getUsers();
@@ -24,10 +26,17 @@ export default function Sidebar() {
       {/* Header */}
       <div className="p-4 border-b border-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-black font-bold text-lg">
-              {user?.name?.charAt(0).toUpperCase()}
-            </div>
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={() => setShowProfile(true)}
+          >
+            {user?.avatar ? (
+              <img src={user.avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-black font-bold text-lg">
+                {user?.name?.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
               <p className="text-white font-semibold text-sm">{user?.name}</p>
               <div className="flex items-center gap-1">
@@ -45,7 +54,6 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Search */}
         <div className="relative">
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
@@ -88,9 +96,13 @@ export default function Sidebar() {
                 className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-800 transition-all ${selectedUser?._id === u._id ? 'bg-gray-800 border-l-2 border-green-400' : ''}`}
               >
                 <div className="relative flex-shrink-0">
-                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                    {u.name?.charAt(0).toUpperCase()}
-                  </div>
+                  {u.avatar ? (
+                    <img src={u.avatar} alt="avatar" className="w-11 h-11 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                      {u.name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   {onlineUsers.includes(u._id) && (
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-900"></div>
                   )}
@@ -129,6 +141,8 @@ export default function Sidebar() {
           </>
         )}
       </div>
+
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
     </div>
   );
 }

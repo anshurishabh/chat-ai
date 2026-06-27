@@ -41,6 +41,11 @@ const useAuthStore = create((set) => ({
     localStorage.removeItem('nexchat-user');
     set({ user: null });
   },
+
+  updateUser: (userData) => {
+    localStorage.setItem('nexchat-user', JSON.stringify(userData));
+    set({ user: userData });
+  },
 }));
 
 export default useAuthStore;

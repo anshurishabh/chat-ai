@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const cloudinary = require('../config/cloudinary');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -84,4 +85,29 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, getAllUsers };
+const updateProfile = async (req, res) => {
+  try {
+    const { name, bio, avatar } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (name) user.name = name;
+    if (bio) user.bio = bio;
+    if (avatar) user.avatar = avatar;
+
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      bio: user.bio,
+      token: generateToken(user._id)
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { register, login, getMe, getAllUsers, updateProfile };
