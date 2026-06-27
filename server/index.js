@@ -21,11 +21,24 @@ const app = express();
 const server = http.createServer(app);
 
 const io = socketIO(server, {
-  cors: { origin: '*' },
+  cors: {
+    origin: [
+      'https://chat-ai-18y1.vercel.app',
+      'http://localhost:3000'
+    ],
+    credentials: true
+  },
   maxHttpBufferSize: 1e8,
 });
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://chat-ai-18y1.vercel.app',
+    'http://localhost:3000'
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
 const uploadsDir = path.join(__dirname, 'uploads');
