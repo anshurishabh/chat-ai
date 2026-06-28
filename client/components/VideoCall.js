@@ -2,11 +2,35 @@
 import { useEffect, useRef, useState } from 'react';
 import SimplePeer from 'simple-peer';
 
-export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, incomingSignal }) {
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ]
+};
+
+export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, incomingSignal, isVoiceOnly }) {
   const [callStatus, setCallStatus] = useState(isIncoming ? 'incoming' : 'calling');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isVoiceOnly, setIsVoiceOnly] = useState(false);
 
   const myVideo = useRef(null);
   const remoteVideo = useRef(null);
@@ -18,17 +42,30 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       startCall();
     }
     return () => {
-      endCall();
+      cleanup();
     };
   }, []);
 
+  const cleanup = () => {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    peerRef.current?.destroy();
+  };
+
   const startCall = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: !isVoiceOnly, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: !isVoiceOnly,
+        audio: true
+      });
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
-      const peer = new SimplePeer({ initiator: true, trickle: false, stream });
+      const peer = new SimplePeer({
+        initiator: true,
+        trickle: true,
+        stream,
+        config: ICE_SERVERS
+      });
 
       peer.on('signal', (signal) => {
         socket.emit('call-user', {
@@ -41,38 +78,68 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       });
 
       peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+        if (remoteVideo.current) {
+          remoteVideo.current.srcObject = remoteStream;
+          remoteVideo.current.play().catch(console.error);
+        }
         setCallStatus('connected');
       });
 
-      peer.on('close', () => endCall());
+      peer.on('error', (err) => {
+        console.error('Peer error:', err);
+      });
+
+      peer.on('close', () => {
+        setCallStatus('ended');
+        onClose();
+      });
+
       peerRef.current = peer;
       setCallStatus('calling');
     } catch (err) {
       console.error('Call error:', err);
-      alert('Camera/Microphone access denied!');
+      alert('Camera/Microphone access denied! Please allow permissions.');
       onClose();
     }
   };
 
   const answerCall = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: !isVoiceOnly, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: !isVoiceOnly,
+        audio: true
+      });
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
-      const peer = new SimplePeer({ initiator: false, trickle: false, stream });
+      const peer = new SimplePeer({
+        initiator: false,
+        trickle: true,
+        stream,
+        config: ICE_SERVERS
+      });
 
       peer.on('signal', (signal) => {
         socket.emit('answer-call', { to: selectedUser._id, signal });
       });
 
       peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+        if (remoteVideo.current) {
+          remoteVideo.current.srcObject = remoteStream;
+          remoteVideo.current.play().catch(console.error);
+        }
         setCallStatus('connected');
       });
 
-      peer.on('close', () => endCall());
+      peer.on('error', (err) => {
+        console.error('Peer error:', err);
+      });
+
+      peer.on('close', () => {
+        setCallStatus('ended');
+        onClose();
+      });
+
       peer.signal(incomingSignal);
       peerRef.current = peer;
       setCallStatus('connected');
@@ -83,22 +150,27 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   };
 
   const endCall = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    peerRef.current?.destroy();
-    socket.emit('end-call', { to: selectedUser._id });
+    cleanup();
+    if (socket && selectedUser) {
+      socket.emit('end-call', { to: selectedUser._id });
+    }
     onClose();
   };
 
   const toggleMute = () => {
     if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => track.enabled = isMuted);
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
       setIsMuted(!isMuted);
     }
   };
 
   const toggleVideo = () => {
     if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => track.enabled = isVideoOff);
+      streamRef.current.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
       setIsVideoOff(!isVideoOff);
     }
   };
@@ -129,7 +201,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
         {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
-          {/* Remote Video */}
           <video
             ref={remoteVideo}
             autoPlay
@@ -137,7 +208,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             className="w-full h-full object-cover"
           />
 
-          {/* My Video (small) */}
           <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400">
             <video
               ref={myVideo}
@@ -155,7 +225,9 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
                 {selectedUser?.name?.charAt(0).toUpperCase()}
               </div>
               <p className="text-white text-xl font-semibold mb-2">{selectedUser?.name}</p>
-              <p className="text-gray-400 text-sm mb-8">Incoming {isVoiceOnly ? 'voice' : 'video'} call...</p>
+              <p className="text-gray-400 text-sm mb-8">
+                Incoming {isVoiceOnly ? 'voice' : 'video'} call...
+              </p>
               <div className="flex gap-6">
                 <button
                   onClick={endCall}
