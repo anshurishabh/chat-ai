@@ -273,4 +273,3 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       </div>
     </div>
   );
-}
