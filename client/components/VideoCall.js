@@ -4,27 +4,30 @@ import SimplePeer from 'simple-peer';
 
 const ICE_SERVERS = {
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ]
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "d42a7122de3bd7e3b92c55b5",
+        credential: "qi5XxaBUUycWtIQV",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "d42a7122de3bd7e3b92c55b5",
+        credential: "qi5XxaBUUycWtIQV",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "d42a7122de3bd7e3b92c55b5",
+        credential: "qi5XxaBUUycWtIQV",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "d42a7122de3bd7e3b92c55b5",
+        credential: "qi5XxaBUUycWtIQV",
+      },
+  ],
 };
 
 export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, incomingSignal, isVoiceOnly }) {
