@@ -2,32 +2,31 @@
 import { useEffect, useRef, useState } from 'react';
 import SimplePeer from 'simple-peer';
 
+// TURN Server Configuration - Yahan aapke credentials hain
 const ICE_SERVERS = {
   iceServers: [
-      {
-        urls: "stun:stun.relay.metered.ca:80",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80",
-        username: "d42a7122de3bd7e3b92c55b5",
-        credential: "qi5XxaBUUycWtIQV",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username: "d42a7122de3bd7e3b92c55b5",
-        credential: "qi5XxaBUUycWtIQV",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:443",
-        username: "d42a7122de3bd7e3b92c55b5",
-        credential: "qi5XxaBUUycWtIQV",
-      },
-      {
-        urls: "turns:global.relay.metered.ca:443?transport=tcp",
-        username: "d42a7122de3bd7e3b92c55b5",
-        credential: "qi5XxaBUUycWtIQV",
-      },
-  ],
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    {
+      urls: 'turn:global.relay.metered.ca:80',
+      username: 'd42a7122de3bd7e3b92c55b5',
+      credential: 'qi5XxaBUUycWtIQV',
+    },
+    {
+      urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+      username: 'd42a7122de3bd7e3b92c55b5',
+      credential: 'qi5XxaBUUycWtIQV',
+    },
+    {
+      urls: 'turn:global.relay.metered.ca:443',
+      username: 'd42a7122de3bd7e3b92c55b5',
+      credential: 'qi5XxaBUUycWtIQV',
+    },
+    {
+      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+      username: 'd42a7122de3bd7e3b92c55b5',
+      credential: 'qi5XxaBUUycWtIQV',
+    }
+  ]
 };
 
 export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, incomingSignal, isVoiceOnly }) {
@@ -56,18 +55,16 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
   const startCall = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: !isVoiceOnly,
-        audio: true
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: !isVoiceOnly, audio: true });
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
+      // SimplePeer mein 'config' key ke andar ICE_SERVERS pass kiya hai
       const peer = new SimplePeer({
         initiator: true,
-        trickle: true,
+        trickle: false, // Production ke liye false zyada stable hai
         stream,
-        config: ICE_SERVERS
+        config: ICE_SERVERS 
       });
 
       peer.on('signal', (signal) => {
@@ -88,36 +85,27 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         setCallStatus('connected');
       });
 
-      peer.on('error', (err) => {
-        console.error('Peer error:', err);
-      });
-
-      peer.on('close', () => {
-        setCallStatus('ended');
-        onClose();
-      });
+      peer.on('error', (err) => console.error('Peer error:', err));
+      peer.on('close', () => { setCallStatus('ended'); onClose(); });
 
       peerRef.current = peer;
       setCallStatus('calling');
     } catch (err) {
       console.error('Call error:', err);
-      alert('Camera/Microphone access denied! Please allow permissions.');
+      alert('Camera/Microphone access denied!');
       onClose();
     }
   };
 
   const answerCall = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: !isVoiceOnly,
-        audio: true
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: !isVoiceOnly, audio: true });
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
       const peer = new SimplePeer({
         initiator: false,
-        trickle: true,
+        trickle: false,
         stream,
         config: ICE_SERVERS
       });
@@ -134,15 +122,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         setCallStatus('connected');
       });
 
-      peer.on('error', (err) => {
-        console.error('Peer error:', err);
-      });
-
-      peer.on('close', () => {
-        setCallStatus('ended');
-        onClose();
-      });
-
       peer.signal(incomingSignal);
       peerRef.current = peer;
       setCallStatus('connected');
@@ -152,6 +131,9 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
     }
   };
 
+  // ... baaki ka UI code waisa hi rahega (endCall, toggleMute, return block)
+  // [Paste your existing UI/controls code here]
+}
   const endCall = () => {
     cleanup();
     if (socket && selectedUser) {
