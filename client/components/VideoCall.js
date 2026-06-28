@@ -2,29 +2,28 @@
 import { useEffect, useRef, useState } from 'react';
 import SimplePeer from 'simple-peer';
 
-// TURN Server Configuration
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.relay.metered.ca:80' },
     {
       urls: 'turn:global.relay.metered.ca:80',
       username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      credential: 'qi5XxaBUUycWtIQV'
     },
     {
       urls: 'turn:global.relay.metered.ca:80?transport=tcp',
       username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      credential: 'qi5XxaBUUycWtIQV'
     },
     {
       urls: 'turn:global.relay.metered.ca:443',
       username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      credential: 'qi5XxaBUUycWtIQV'
     },
     {
       urls: 'turns:global.relay.metered.ca:443?transport=tcp',
       username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      credential: 'qi5XxaBUUycWtIQV'
     }
   ]
 };
@@ -40,12 +39,20 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const streamRef = useRef(null);
 
   useEffect(() => {
-    if (!isIncoming) {
-      startCall();
-    }
-    return () => {
+    // Socket Listeners
+    socket.on('call-accepted', (signal) => {
+      if (peerRef.current) peerRef.current.signal(signal);
+      setCallStatus('connected');
+    });
+
+    socket.on('call-ended', () => {
       cleanup();
-    };
+      onClose();
+    });
+
+    if (!isIncoming) startCall();
+
+    return () => cleanup();
   }, []);
 
   const cleanup = () => {
@@ -59,41 +66,18 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
-      const peer = new SimplePeer({
-        initiator: true,
-        trickle: false,
-        stream,
-        config: ICE_SERVERS 
-      });
-
+      const peer = new SimplePeer({ initiator: true, trickle: true, stream, config: ICE_SERVERS });
+      
       peer.on('signal', (signal) => {
-        socket.emit('call-user', {
-          to: selectedUser?._id,
-          from: currentUser?._id,
-          signal,
-          callerName: currentUser?.name,
-          isVoiceOnly,
-        });
+        socket.emit('call-user', { to: selectedUser._id, from: currentUser._id, signal, callerName: currentUser.name, isVoiceOnly });
       });
 
       peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) {
-          remoteVideo.current.srcObject = remoteStream;
-          remoteVideo.current.play().catch(console.error);
-        }
-        setCallStatus('connected');
+        if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
       });
 
-      peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => { setCallStatus('ended'); onClose(); });
-
       peerRef.current = peer;
-      setCallStatus('calling');
-    } catch (err) {
-      console.error('Call error:', err);
-      alert('Camera/Microphone access denied!');
-      onClose();
-    }
+    } catch (err) { alert('Access denied'); onClose(); }
   };
 
   const answerCall = async () => {
@@ -102,86 +86,47 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       streamRef.current = stream;
       if (myVideo.current) myVideo.current.srcObject = stream;
 
-      const peer = new SimplePeer({
-        initiator: false,
-        trickle: false,
-        stream,
-        config: ICE_SERVERS
-      });
+      const peer = new SimplePeer({ initiator: false, trickle: true, stream, config: ICE_SERVERS });
 
       peer.on('signal', (signal) => {
-        socket.emit('answer-call', { to: selectedUser?._id, signal });
+        socket.emit('answer-call', { to: selectedUser._id, signal });
       });
 
       peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) {
-          remoteVideo.current.srcObject = remoteStream;
-          remoteVideo.current.play().catch(console.error);
-        }
-        setCallStatus('connected');
+        if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
       });
 
       peer.signal(incomingSignal);
       peerRef.current = peer;
       setCallStatus('connected');
-    } catch (err) {
-      console.error('Answer error:', err);
-      onClose();
-    }
+    } catch (err) { onClose(); }
   };
 
   const endCall = () => {
+    socket.emit('end-call', { to: selectedUser._id });
     cleanup();
-    if (socket && selectedUser) {
-      socket.emit('end-call', { to: selectedUser._id });
-    }
     onClose();
-  };
-
-  const toggleMute = () => {
-    streamRef.current?.getAudioTracks().forEach(track => track.enabled = !track.enabled);
-    setIsMuted(!isMuted);
-  };
-
-  const toggleVideo = () => {
-    streamRef.current?.getVideoTracks().forEach(track => track.enabled = !track.enabled);
-    setIsVideoOff(!isVideoOff);
   };
 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
-      <div className="w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden border border-gray-700">
-        <div className="p-4 bg-gray-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-              {selectedUser?.name?.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <p className="text-white font-semibold">{selectedUser?.name}</p>
-              <p className="text-xs text-gray-400">
-                {callStatus === 'calling' ? '📞 Calling...' : callStatus === 'incoming' ? '📲 Incoming call...' : '🟢 Connected'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative bg-black" style={{ height: '400px' }}>
+      <div className="w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden">
+        <div className="relative bg-black h-96 flex items-center justify-center">
           <video ref={remoteVideo} autoPlay playsInline className="w-full h-full object-cover" />
-          <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400">
-            <video ref={myVideo} autoPlay playsInline muted className="w-full h-full object-cover" />
-          </div>
-
+          <video ref={myVideo} autoPlay playsInline muted className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl border-2 border-green-400" />
+          
           {callStatus === 'incoming' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
-              <button onClick={answerCall} className="w-16 h-16 bg-green-500 rounded-full animate-bounce">📞</button>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90">
+              <p className="text-white mb-4">Incoming Call...</p>
+              <div className="flex gap-4">
+                <button onClick={answerCall} className="bg-green-500 p-4 rounded-full">📞</button>
+                <button onClick={endCall} className="bg-red-500 p-4 rounded-full">📵</button>
+              </div>
             </div>
           )}
         </div>
-
-        <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
-          <button onClick={toggleMute} className={`w-12 h-12 rounded-full ${isMuted ? 'bg-red-500' : 'bg-gray-700'}`}>🎙️</button>
-          <button onClick={endCall} className="w-16 h-16 bg-red-500 rounded-full">📵</button>
-          <button onClick={toggleVideo} className={`w-12 h-12 rounded-full ${isVideoOff ? 'bg-red-500' : 'bg-gray-700'}`}>📹</button>
+        <div className="p-6 flex justify-center gap-6 bg-gray-800">
+          <button onClick={endCall} className="bg-red-500 p-4 rounded-full text-2xl">End Call</button>
         </div>
       </div>
     </div>
