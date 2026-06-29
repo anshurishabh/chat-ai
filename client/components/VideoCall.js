@@ -3,23 +3,27 @@ import { useEffect, useRef, useState } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
+const TOKEN = process.env.NEXT_PUBLIC_AGORA_TOKEN;
+const CHANNEL = process.env.NEXT_PUBLIC_AGORA_CHANNEL || 'nexchat';
 
 export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, isVoiceOnly }) {
   const [callStatus, setCallStatus] = useState(isIncoming ? 'incoming' : 'calling');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [remoteUsers, setRemoteUsers] = useState([]);
 
   const clientRef = useRef(null);
-  const localTrackRef = useRef({ audio: null, video: null });
-
-  const channelName = [currentUser._id, selectedUser._id].sort().join('-');
+  const localAudioTrackRef = useRef(null);
+  const localVideoTrackRef = useRef(null);
 
   useEffect(() => {
-    if (!isIncoming) startCall();
+    if (!isIncoming) {
+      notifyAndJoin();
+    }
 
     if (socket) {
       socket.on('call-accepted', () => {
-        joinChannel();
+        setCallStatus('connected');
       });
 
       socket.on('call-ended', () => {
@@ -37,24 +41,15 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
     };
   }, []);
 
-  const startCall = async () => {
+  const notifyAndJoin = async () => {
     socket.emit('call-user', {
       to: selectedUser._id,
       from: currentUser._id,
       callerName: currentUser.name,
       isVoiceOnly,
-      channel: channelName,
+      channel: CHANNEL,
     });
     setCallStatus('calling');
-    await joinChannel();
-  };
-
-  const answerCall = async () => {
-    socket.emit('answer-call', {
-      to: selectedUser._id,
-      channel: channelName,
-    });
-    setCallStatus('connected');
     await joinChannel();
   };
 
@@ -63,39 +58,59 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
       clientRef.current = client;
 
-      await client.join(APP_ID, channelName, null, currentUser._id);
-
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-      localTrackRef.current.audio = audioTrack;
-
-      let videoTrack = null;
-      if (!isVoiceOnly) {
-        videoTrack = await AgoraRTC.createCameraVideoTrack();
-        localTrackRef.current.video = videoTrack;
-        videoTrack.play('local-video');
-      }
-
-      await client.publish(isVoiceOnly ? [audioTrack] : [audioTrack, videoTrack]);
-
       client.on('user-published', async (user, mediaType) => {
         await client.subscribe(user, mediaType);
+
         if (mediaType === 'video') {
-          user.videoTrack.play('remote-video');
+          setRemoteUsers(prev => [...prev, user]);
+          setTimeout(() => {
+            user.videoTrack?.play(`remote-video-${user.uid}`);
+          }, 500);
         }
+
         if (mediaType === 'audio') {
-          user.audioTrack.play();
+          user.audioTrack?.play();
         }
+
         setCallStatus('connected');
       });
 
+      client.on('user-unpublished', (user) => {
+        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      });
+
+      await client.join(APP_ID, CHANNEL, TOKEN || null, currentUser._id);
+
+      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      localAudioTrackRef.current = audioTrack;
+
+      if (!isVoiceOnly) {
+        const videoTrack = await AgoraRTC.createCameraVideoTrack();
+        localVideoTrackRef.current = videoTrack;
+        videoTrack.play('local-video');
+        await client.publish([audioTrack, videoTrack]);
+      } else {
+        await client.publish([audioTrack]);
+      }
+
+      setCallStatus('connected');
     } catch (err) {
       console.error('Agora join error:', err);
     }
   };
 
+  const answerCall = async () => {
+    socket.emit('answer-call', {
+      to: selectedUser._id,
+      channel: CHANNEL,
+    });
+    setCallStatus('connected');
+    await joinChannel();
+  };
+
   const leaveChannel = async () => {
-    localTrackRef.current.audio?.close();
-    localTrackRef.current.video?.close();
+    localAudioTrackRef.current?.close();
+    localVideoTrackRef.current?.close();
     await clientRef.current?.leave();
   };
 
@@ -108,15 +123,15 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   };
 
   const toggleMute = async () => {
-    if (localTrackRef.current.audio) {
-      await localTrackRef.current.audio.setEnabled(isMuted);
+    if (localAudioTrackRef.current) {
+      await localAudioTrackRef.current.setEnabled(isMuted);
       setIsMuted(!isMuted);
     }
   };
 
   const toggleVideo = async () => {
-    if (localTrackRef.current.video) {
-      await localTrackRef.current.video.setEnabled(isVideoOff);
+    if (localVideoTrackRef.current) {
+      await localVideoTrackRef.current.setEnabled(isVideoOff);
       setIsVideoOff(!isVideoOff);
     }
   };
@@ -147,8 +162,33 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
         {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
-          <div id="remote-video" className="w-full h-full" />
-          <div id="local-video" className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400" />
+
+          {/* Remote Videos */}
+          {remoteUsers.map(user => (
+            <div
+              key={user.uid}
+              id={`remote-video-${user.uid}`}
+              className="w-full h-full"
+            />
+          ))}
+
+          {/* No remote video placeholder */}
+          {remoteUsers.length === 0 && callStatus === 'connected' && (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mx-auto mb-4">
+                  {selectedUser?.name?.charAt(0).toUpperCase()}
+                </div>
+                <p className="text-white text-sm">🎙️ Voice Connected</p>
+              </div>
+            </div>
+          )}
+
+          {/* Local Video */}
+          <div
+            id="local-video"
+            className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400"
+          />
 
           {/* Incoming Call UI */}
           {callStatus === 'incoming' && (
@@ -184,13 +224,22 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
         {/* Controls */}
         <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
-          <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
+          <button
+            onClick={toggleMute}
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}
+          >
             {isMuted ? '🔇' : '🎙️'}
           </button>
-          <button onClick={endCall} className="w-16 h-16 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105">
+          <button
+            onClick={endCall}
+            className="w-16 h-16 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105"
+          >
             📵
           </button>
-          <button onClick={toggleVideo} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isVideoOff ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
+          <button
+            onClick={toggleVideo}
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isVideoOff ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}
+          >
             {isVideoOff ? '📵' : '📹'}
           </button>
         </div>
