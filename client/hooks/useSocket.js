@@ -36,8 +36,8 @@ const useSocket = () => {
       if (callbacksRef.current.onCallAccepted) callbacksRef.current.onCallAccepted(signal);
     });
 
-    socketInstance.on('ice-candidate', ({ candidate }) => {
-      if (callbacksRef.current.onIceCandidate) callbacksRef.current.onIceCandidate(candidate);
+    socketInstance.on('ice-candidate', (data) => {
+      if (callbacksRef.current.onIceCandidate) callbacksRef.current.onIceCandidate(data);
     });
 
     socketInstance.on('call-ended', () => {
@@ -69,7 +69,11 @@ const useSocket = () => {
     callbacksRef.current = { ...callbacksRef.current, ...callbacks };
   };
 
-  return { sendMessage, sendTyping, stopTyping, joinGroup, callUser, answerCall, endCall, sendIceCandidate, setCallbacks, socket: socketInstance };
+  return {
+    sendMessage, sendTyping, stopTyping, joinGroup,
+    callUser, answerCall, endCall, sendIceCandidate,
+    setCallbacks, socket: socketInstance
+  };
 };
 
 export default useSocket;

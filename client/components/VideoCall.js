@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import SimplePeer from 'simple-peer';
+import useSocket from '../hooks/useSocket';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -32,6 +33,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const [callStatus, setCallStatus] = useState(isIncoming ? 'incoming' : 'calling');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const { setCallbacks, sendIceCandidate } = useSocket();
 
   const myVideo = useRef(null);
   const remoteVideo = useRef(null);
@@ -39,12 +41,22 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const streamRef = useRef(null);
 
   useEffect(() => {
-    if (!isIncoming) {
-      startCall();
-    }
-    return () => {
-      cleanup();
-    };
+    if (!isIncoming) startCall();
+
+    setCallbacks({
+      onCallAccepted: (signal) => {
+        if (peerRef.current) {
+          peerRef.current.signal(signal);
+        }
+      },
+      onIceCandidate: (data) => {
+        if (peerRef.current && data.candidate) {
+          peerRef.current.signal({ type: 'candidate', candidate: data.candidate });
+        }
+      },
+    });
+
+    return () => cleanup();
   }, []);
 
   const cleanup = () => {
@@ -69,13 +81,20 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       });
 
       peer.on('signal', (signal) => {
-        socket.emit('call-user', {
-          to: selectedUser._id,
-          from: currentUser._id,
-          signal,
-          callerName: currentUser.name,
-          isVoiceOnly,
-        });
+        if (signal.type === 'offer') {
+          socket.emit('call-user', {
+            to: selectedUser._id,
+            from: currentUser._id,
+            signal,
+            callerName: currentUser.name,
+            isVoiceOnly,
+          });
+        } else if (signal.candidate) {
+          sendIceCandidate({
+            to: selectedUser._id,
+            candidate: signal.candidate
+          });
+        }
       });
 
       peer.on('stream', (remoteStream) => {
@@ -87,9 +106,8 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       });
 
       peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => { setCallStatus('ended'); onClose(); });
+      peer.on('close', () => { onClose(); });
       peerRef.current = peer;
-      setCallStatus('calling');
     } catch (err) {
       console.error('Call error:', err);
       alert('Camera/Microphone access denied!');
@@ -114,7 +132,14 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       });
 
       peer.on('signal', (signal) => {
-        socket.emit('answer-call', { to: selectedUser._id, signal });
+        if (signal.type === 'answer') {
+          socket.emit('answer-call', { to: selectedUser._id, signal });
+        } else if (signal.candidate) {
+          sendIceCandidate({
+            to: selectedUser._id,
+            candidate: signal.candidate
+          });
+        }
       });
 
       peer.on('stream', (remoteStream) => {
@@ -126,7 +151,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       });
 
       peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => { setCallStatus('ended'); onClose(); });
+      peer.on('close', () => { onClose(); });
       peer.signal(incomingSignal);
       peerRef.current = peer;
       setCallStatus('connected');
@@ -146,18 +171,14 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
   const toggleMute = () => {
     if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => {
-        track.enabled = !track.enabled;
-      });
+      streamRef.current.getAudioTracks().forEach(track => { track.enabled = !track.enabled; });
       setIsMuted(!isMuted);
     }
   };
 
   const toggleVideo = () => {
     if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => {
-        track.enabled = !track.enabled;
-      });
+      streamRef.current.getVideoTracks().forEach(track => { track.enabled = !track.enabled; });
       setIsVideoOff(!isVideoOff);
     }
   };
@@ -165,8 +186,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
       <div className="w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden border border-gray-700">
-
-        {/* Header */}
         <div className="p-4 bg-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
@@ -176,8 +195,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
               <p className="text-white font-semibold">{selectedUser?.name}</p>
               <p className="text-xs text-gray-400">
                 {callStatus === 'calling' ? '📞 Calling...' :
-                 callStatus === 'incoming' ? '📲 Incoming call...' :
-                 '🟢 Connected'}
+                 callStatus === 'incoming' ? '📲 Incoming call...' : '🟢 Connected'}
               </p>
             </div>
           </div>
@@ -186,7 +204,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           </div>
         </div>
 
-        {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
           <video ref={remoteVideo} autoPlay playsInline className="w-full h-full object-cover" />
           <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400">
@@ -223,7 +240,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           )}
         </div>
 
-        {/* Controls */}
         <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
           <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
             {isMuted ? '🔇' : '🎙️'}
