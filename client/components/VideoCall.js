@@ -1,184 +1,122 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import SimplePeer from 'simple-peer';
-import useSocket from '../hooks/useSocket';
+import AgoraRTC from 'agora-rtc-sdk-ng';
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.relay.metered.ca:80' },
-    {
-      urls: 'turn:global.relay.metered.ca:80',
-      username: '1fd2c31a76c9eeedddcba13',
-      credential: 'sqEQ5BkooAYRoTTH',
-    },
-    {
-      urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-      username: '1fd2c31a76c9eeedddcba13',
-      credential: 'sqEQ5BkooAYRoTTH',
-    },
-    {
-      urls: 'turn:global.relay.metered.ca:443',
-      username: '1fd2c31a76c9eeedddcba13',
-      credential: 'sqEQ5BkooAYRoTTH',
-    },
-    {
-      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-      username: '1fd2c31a76c9eeedddcba13',
-      credential: 'sqEQ5BkooAYRoTTH',
-    },
-  ]
-};
+const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 
-export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, incomingSignal, isVoiceOnly }) {
+export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, isVoiceOnly }) {
   const [callStatus, setCallStatus] = useState(isIncoming ? 'incoming' : 'calling');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const { setCallbacks, sendIceCandidate } = useSocket();
 
-  const myVideo = useRef(null);
-  const remoteVideo = useRef(null);
-  const peerRef = useRef(null);
-  const streamRef = useRef(null);
+  const clientRef = useRef(null);
+  const localTrackRef = useRef({ audio: null, video: null });
+
+  const channelName = [currentUser._id, selectedUser._id].sort().join('-');
 
   useEffect(() => {
     if (!isIncoming) startCall();
 
-    setCallbacks({
-      onCallAccepted: (signal) => {
-        if (peerRef.current) {
-          peerRef.current.signal(signal);
-        }
-      },
-      onIceCandidate: (data) => {
-        if (peerRef.current && data.candidate) {
-          peerRef.current.signal({ type: 'candidate', candidate: data.candidate });
-        }
-      },
-    });
+    if (socket) {
+      socket.on('call-accepted', () => {
+        joinChannel();
+      });
 
-    return () => cleanup();
+      socket.on('call-ended', () => {
+        leaveChannel();
+        onClose();
+      });
+    }
+
+    return () => {
+      leaveChannel();
+      if (socket) {
+        socket.off('call-accepted');
+        socket.off('call-ended');
+      }
+    };
   }, []);
 
-  const cleanup = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    peerRef.current?.destroy();
-  };
-
   const startCall = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: !isVoiceOnly,
-        audio: true
-      });
-      streamRef.current = stream;
-      if (myVideo.current) myVideo.current.srcObject = stream;
-
-      const peer = new SimplePeer({
-        initiator: true,
-        trickle: true,
-        stream,
-        config: ICE_SERVERS
-      });
-
-      peer.on('signal', (signal) => {
-        if (signal.type === 'offer') {
-          socket.emit('call-user', {
-            to: selectedUser._id,
-            from: currentUser._id,
-            signal,
-            callerName: currentUser.name,
-            isVoiceOnly,
-          });
-        } else if (signal.candidate) {
-          sendIceCandidate({
-            to: selectedUser._id,
-            candidate: signal.candidate
-          });
-        }
-      });
-
-      peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) {
-          remoteVideo.current.srcObject = remoteStream;
-          remoteVideo.current.play().catch(console.error);
-        }
-        setCallStatus('connected');
-      });
-
-      peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => { onClose(); });
-      peerRef.current = peer;
-    } catch (err) {
-      console.error('Call error:', err);
-      alert('Camera/Microphone access denied!');
-      onClose();
-    }
+    socket.emit('call-user', {
+      to: selectedUser._id,
+      from: currentUser._id,
+      callerName: currentUser.name,
+      isVoiceOnly,
+      channel: channelName,
+    });
+    setCallStatus('calling');
+    await joinChannel();
   };
 
   const answerCall = async () => {
+    socket.emit('answer-call', {
+      to: selectedUser._id,
+      channel: channelName,
+    });
+    setCallStatus('connected');
+    await joinChannel();
+  };
+
+  const joinChannel = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: !isVoiceOnly,
-        audio: true
-      });
-      streamRef.current = stream;
-      if (myVideo.current) myVideo.current.srcObject = stream;
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+      clientRef.current = client;
 
-      const peer = new SimplePeer({
-        initiator: false,
-        trickle: true,
-        stream,
-        config: ICE_SERVERS
-      });
+      await client.join(APP_ID, channelName, null, currentUser._id);
 
-      peer.on('signal', (signal) => {
-        if (signal.type === 'answer') {
-          socket.emit('answer-call', { to: selectedUser._id, signal });
-        } else if (signal.candidate) {
-          sendIceCandidate({
-            to: selectedUser._id,
-            candidate: signal.candidate
-          });
+      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      localTrackRef.current.audio = audioTrack;
+
+      let videoTrack = null;
+      if (!isVoiceOnly) {
+        videoTrack = await AgoraRTC.createCameraVideoTrack();
+        localTrackRef.current.video = videoTrack;
+        videoTrack.play('local-video');
+      }
+
+      await client.publish(isVoiceOnly ? [audioTrack] : [audioTrack, videoTrack]);
+
+      client.on('user-published', async (user, mediaType) => {
+        await client.subscribe(user, mediaType);
+        if (mediaType === 'video') {
+          user.videoTrack.play('remote-video');
         }
-      });
-
-      peer.on('stream', (remoteStream) => {
-        if (remoteVideo.current) {
-          remoteVideo.current.srcObject = remoteStream;
-          remoteVideo.current.play().catch(console.error);
+        if (mediaType === 'audio') {
+          user.audioTrack.play();
         }
         setCallStatus('connected');
       });
 
-      peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => { onClose(); });
-      peer.signal(incomingSignal);
-      peerRef.current = peer;
-      setCallStatus('connected');
     } catch (err) {
-      console.error('Answer error:', err);
-      onClose();
+      console.error('Agora join error:', err);
     }
   };
 
-  const endCall = () => {
-    cleanup();
+  const leaveChannel = async () => {
+    localTrackRef.current.audio?.close();
+    localTrackRef.current.video?.close();
+    await clientRef.current?.leave();
+  };
+
+  const endCall = async () => {
+    await leaveChannel();
     if (socket && selectedUser) {
       socket.emit('end-call', { to: selectedUser._id });
     }
     onClose();
   };
 
-  const toggleMute = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => { track.enabled = !track.enabled; });
+  const toggleMute = async () => {
+    if (localTrackRef.current.audio) {
+      await localTrackRef.current.audio.setEnabled(isMuted);
       setIsMuted(!isMuted);
     }
   };
 
-  const toggleVideo = () => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => { track.enabled = !track.enabled; });
+  const toggleVideo = async () => {
+    if (localTrackRef.current.video) {
+      await localTrackRef.current.video.setEnabled(isVideoOff);
       setIsVideoOff(!isVideoOff);
     }
   };
@@ -186,6 +124,8 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
       <div className="w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden border border-gray-700">
+
+        {/* Header */}
         <div className="p-4 bg-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
@@ -195,7 +135,8 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
               <p className="text-white font-semibold">{selectedUser?.name}</p>
               <p className="text-xs text-gray-400">
                 {callStatus === 'calling' ? '📞 Calling...' :
-                 callStatus === 'incoming' ? '📲 Incoming call...' : '🟢 Connected'}
+                 callStatus === 'incoming' ? '📲 Incoming call...' :
+                 '🟢 Connected'}
               </p>
             </div>
           </div>
@@ -204,12 +145,12 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           </div>
         </div>
 
+        {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
-          <video ref={remoteVideo} autoPlay playsInline className="w-full h-full object-cover" />
-          <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400">
-            <video ref={myVideo} autoPlay playsInline muted className="w-full h-full object-cover" />
-          </div>
+          <div id="remote-video" className="w-full h-full" />
+          <div id="local-video" className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400" />
 
+          {/* Incoming Call UI */}
           {callStatus === 'incoming' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
@@ -224,6 +165,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             </div>
           )}
 
+          {/* Calling UI */}
           {callStatus === 'calling' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
@@ -240,6 +182,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           )}
         </div>
 
+        {/* Controls */}
         <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
           <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
             {isMuted ? '🔇' : '🎙️'}
