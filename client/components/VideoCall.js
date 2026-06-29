@@ -7,23 +7,23 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.relay.metered.ca:80' },
     {
       urls: 'turn:global.relay.metered.ca:80',
-      username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      username: '1fd2c31a76c9eeedddcba13',
+      credential: 'sqEQ5BkooAYRoTTH',
     },
     {
       urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-      username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      username: '1fd2c31a76c9eeedddcba13',
+      credential: 'sqEQ5BkooAYRoTTH',
     },
     {
       urls: 'turn:global.relay.metered.ca:443',
-      username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      username: '1fd2c31a76c9eeedddcba13',
+      credential: 'sqEQ5BkooAYRoTTH',
     },
     {
       urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-      username: 'd42a7122de3bd7e3b92c55b5',
-      credential: 'qi5XxaBUUycWtIQV',
+      username: '1fd2c31a76c9eeedddcba13',
+      credential: 'sqEQ5BkooAYRoTTH',
     },
   ]
 };
@@ -189,12 +189,10 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
           <video ref={remoteVideo} autoPlay playsInline className="w-full h-full object-cover" />
-
           <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400">
             <video ref={myVideo} autoPlay playsInline muted className="w-full h-full object-cover" />
           </div>
 
-          {/* Incoming Call UI */}
           {callStatus === 'incoming' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
@@ -209,7 +207,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             </div>
           )}
 
-          {/* Calling UI */}
           {callStatus === 'calling' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
