@@ -16,43 +16,32 @@ const useSocket = () => {
     if (!user) return;
 
     if (!socketInstance) {
-      socketInstance = io(SOCKET_URL);
+      socketInstance = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+      });
     }
 
     socketInstance.emit('user-online', user._id);
 
-    socketInstance.on('online-users', (users) => {
-      setOnlineUsers(users);
-    });
-
-    socketInstance.on('receive-message', (message) => {
-      addMessage(message);
-    });
-
-    socketInstance.on('user-typing', (userId) => {
-      addTypingUser(userId);
-    });
-
-    socketInstance.on('user-stop-typing', (userId) => {
-      removeTypingUser(userId);
-    });
+    socketInstance.on('online-users', (users) => setOnlineUsers(users));
+    socketInstance.on('receive-message', (message) => addMessage(message));
+    socketInstance.on('user-typing', (userId) => addTypingUser(userId));
+    socketInstance.on('user-stop-typing', (userId) => removeTypingUser(userId));
 
     socketInstance.on('incoming-call', (data) => {
-      if (callbacksRef.current.onIncomingCall) {
-        callbacksRef.current.onIncomingCall(data);
-      }
+      if (callbacksRef.current.onIncomingCall) callbacksRef.current.onIncomingCall(data);
     });
 
     socketInstance.on('call-accepted', (signal) => {
-      if (callbacksRef.current.onCallAccepted) {
-        callbacksRef.current.onCallAccepted(signal);
-      }
+      if (callbacksRef.current.onCallAccepted) callbacksRef.current.onCallAccepted(signal);
+    });
+
+    socketInstance.on('ice-candidate', ({ candidate }) => {
+      if (callbacksRef.current.onIceCandidate) callbacksRef.current.onIceCandidate(candidate);
     });
 
     socketInstance.on('call-ended', () => {
-      if (callbacksRef.current.onCallEnded) {
-        callbacksRef.current.onCallEnded();
-      }
+      if (callbacksRef.current.onCallEnded) callbacksRef.current.onCallEnded();
     });
 
     return () => {
@@ -62,6 +51,7 @@ const useSocket = () => {
       socketInstance.off('user-stop-typing');
       socketInstance.off('incoming-call');
       socketInstance.off('call-accepted');
+      socketInstance.off('ice-candidate');
       socketInstance.off('call-ended');
     };
   }, [user]);
@@ -73,12 +63,13 @@ const useSocket = () => {
   const callUser = (data) => socketInstance?.emit('call-user', data);
   const answerCall = (data) => socketInstance?.emit('answer-call', data);
   const endCall = (data) => socketInstance?.emit('end-call', data);
+  const sendIceCandidate = (data) => socketInstance?.emit('ice-candidate', data);
 
   const setCallbacks = (callbacks) => {
     callbacksRef.current = { ...callbacksRef.current, ...callbacks };
   };
 
-  return { sendMessage, sendTyping, stopTyping, joinGroup, callUser, answerCall, endCall, setCallbacks, socket: socketInstance };
+  return { sendMessage, sendTyping, stopTyping, joinGroup, callUser, answerCall, endCall, sendIceCandidate, setCallbacks, socket: socketInstance };
 };
 
 export default useSocket;
