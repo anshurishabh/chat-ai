@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import AgoraRTC from 'agora-rtc-sdk-ng';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 const TOKEN = process.env.NEXT_PUBLIC_AGORA_TOKEN;
@@ -17,14 +16,22 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const localVideoTrackRef = useRef(null);
   const hasJoinedRef = useRef(false);
   const isMountedRef = useRef(true);
+  const AgoraRTCRef = useRef(null);
 
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (!isIncoming && !hasJoinedRef.current) {
-      hasJoinedRef.current = true;
-      notifyAndJoin();
-    }
+    const init = async () => {
+      // Load Agora SDK only in the browser
+      const mod = await import('agora-rtc-sdk-ng');
+      AgoraRTCRef.current = mod.default;
+
+      if (!isIncoming && !hasJoinedRef.current) {
+        hasJoinedRef.current = true;
+        notifyAndJoin();
+      }
+    };
+    init();
 
     if (socket) {
       socket.on('call-accepted', () => {
@@ -61,6 +68,12 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
   const joinChannel = async () => {
     try {
+      if (!AgoraRTCRef.current) {
+        const mod = await import('agora-rtc-sdk-ng');
+        AgoraRTCRef.current = mod.default;
+      }
+      const AgoraRTC = AgoraRTCRef.current;
+
       const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
       clientRef.current = client;
 
