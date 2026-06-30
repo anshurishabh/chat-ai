@@ -23,7 +23,8 @@ const userSchema = new mongoose.Schema({
   },
   bio: {
     type: String,
-    default: ''
+    default: '',
+    maxlength: 150
   },
   isOnline: {
     type: Boolean,
@@ -40,6 +41,16 @@ const userSchema = new mongoose.Schema({
   twoFactorEnabled: {
     type: Boolean,
     default: false
+  },
+  theme: {
+    type: String,
+    enum: ['dark', 'light'],
+    default: 'dark'
+  },
+  wallpapers: {
+    type: Map,
+    of: String,
+    default: {}
   }
 }, { timestamps: true });
 

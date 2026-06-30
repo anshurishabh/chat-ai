@@ -6,7 +6,7 @@ const getUser = () => {
   return JSON.parse(localStorage.getItem('nexchat-user') || 'null');
 };
 
-const useAuthStore = create((set) => ({
+const useAuthStore = create((set, get) => ({
   user: getUser(),
   loading: false,
   error: null,
@@ -42,9 +42,23 @@ const useAuthStore = create((set) => ({
     set({ user: null });
   },
 
-  updateUser: (userData) => {
-    localStorage.setItem('nexchat-user', JSON.stringify(userData));
-    set({ user: userData });
+  updateProfile: async (updates) => {
+    try {
+      const { data } = await axios.put('/auth/profile', updates);
+      set((state) => {
+        const merged = { ...state.user, ...data };
+        localStorage.setItem('nexchat-user', JSON.stringify(merged));
+        return { user: merged };
+      });
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  },
+
+  setTheme: (theme) => {
+    get().updateProfile({ theme });
   },
 }));
 

@@ -9,6 +9,10 @@ import FileUpload from './FileUpload';
 import VoiceRecorder from './VoiceRecorder';
 import VideoCall from './VideoCall';
 import MessageBubble from './MessageBubble';
+import EmojiPicker from './EmojiPicker';
+import ProfileModal from './ProfileModal';
+import WallpaperPicker from './WallpaperPicker';
+import ConfirmModal from './ConfirmModal';
 
 export default function ChatWindow() {
   const { user } = useAuthStore();
@@ -18,6 +22,8 @@ export default function ChatWindow() {
     replyingTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
     showSearch, toggleSearch, searchQuery, searchResults, searchMessages,
+    viewProfile, viewingProfile, closeProfile,
+    blockUser,
   } = useChatStore();
   const { sendMessage, sendTyping, stopTyping, joinGroup, setCallbacks, socket } = useSocket();
   const { smartReplies, clearSmartReplies, translateMessage, summarizeChat, correctGrammar } = useAIStore();
@@ -34,10 +40,18 @@ export default function ChatWindow() {
   const [showPinnedBar, setShowPinnedBar] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [showOwnProfile, setShowOwnProfile] = useState(false);
+  const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
+  const [wallpaper, setWallpaper] = useState('');
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
   const messageRefs = useRef({});
+
+  const chatId = selectedUser?._id || selectedGroup?._id;
 
   useEffect(() => {
     setCallbacks({
@@ -64,6 +78,10 @@ export default function ChatWindow() {
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
+    setShowHeaderMenu(false);
+
+    const savedWallpaper = user?.wallpapers?.[chatId] || '';
+    setWallpaper(savedWallpaper);
   }, [selectedUser, selectedGroup]);
 
   useEffect(() => {
@@ -124,6 +142,10 @@ export default function ChatWindow() {
     }
   };
 
+  const handleEmojiSelect = (emoji) => {
+    setInput((prev) => prev + emoji);
+  };
+
   const handleTranslate = async () => {
     if (!input.trim()) return;
     const result = await translateMessage(input, translateLang);
@@ -161,6 +183,16 @@ export default function ChatWindow() {
     }
   };
 
+  const handleViewProfile = () => {
+    setShowHeaderMenu(false);
+    if (selectedUser) viewProfile(selectedUser._id);
+  };
+
+  const handleBlockFromHeader = async () => {
+    await blockUser(selectedUser._id);
+    setShowBlockConfirm(false);
+  };
+
   if (!selectedUser && !selectedGroup) {
     return (
       <div className="flex-1 h-screen bg-gray-950 flex flex-col items-center justify-center">
@@ -182,12 +214,22 @@ export default function ChatWindow() {
   const isGroup = !!selectedGroup;
 
   return (
-    <div className="flex-1 h-screen bg-gray-950 flex flex-col relative">
+    <div
+      className="flex-1 h-screen flex flex-col relative"
+      style={{ background: wallpaper || '#030712' }}
+    >
       {/* Chat Header */}
-      <div className="p-4 border-b border-gray-800 bg-gray-900 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-            {chatName?.charAt(0).toUpperCase()}
+      <div className="p-4 border-b border-gray-800 bg-gray-900/95 backdrop-blur flex items-center justify-between flex-wrap gap-2">
+        <div
+          className="flex items-center gap-3 cursor-pointer"
+          onClick={handleViewProfile}
+        >
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
+            {selectedUser?.avatar ? (
+              <img src={selectedUser.avatar} alt="avatar" className="w-full h-full object-cover" />
+            ) : (
+              chatName?.charAt(0).toUpperCase()
+            )}
           </div>
           <div>
             <p className="text-white font-semibold">{chatName}</p>
@@ -203,7 +245,7 @@ export default function ChatWindow() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap relative">
           {selectedUser && (
             <>
               <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">
@@ -239,12 +281,45 @@ export default function ChatWindow() {
           <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">
             🤖 AI
           </button>
+
+          {/* 3-dot menu */}
+          <div className="relative">
+            <button
+              onClick={() => setShowHeaderMenu(!showHeaderMenu)}
+              className="w-9 h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400"
+            >
+              ⋮
+            </button>
+            {showHeaderMenu && (
+              <div className="absolute right-0 top-11 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-30 overflow-hidden">
+                {selectedUser && (
+                  <button onClick={handleViewProfile} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">
+                    👤 View Profile
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowWallpaperPicker(true); setShowHeaderMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700"
+                >
+                  🎨 Change Wallpaper
+                </button>
+                {selectedUser && (
+                  <button
+                    onClick={() => { setShowBlockConfirm(true); setShowHeaderMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700"
+                  >
+                    🚫 Block User
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Search bar */}
       {showSearch && (
-        <div className="bg-gray-900 border-b border-gray-800 p-3">
+        <div className="bg-gray-900/95 backdrop-blur border-b border-gray-800 p-3">
           <input
             autoFocus
             value={searchQuery}
@@ -274,7 +349,7 @@ export default function ChatWindow() {
 
       {/* Pinned messages bar */}
       {showPinnedBar && (
-        <div className="bg-gray-900 border-b border-gray-800 p-3 max-h-40 overflow-y-auto">
+        <div className="bg-gray-900/95 backdrop-blur border-b border-gray-800 p-3 max-h-40 overflow-y-auto">
           <p className="text-yellow-400 text-xs font-semibold mb-2">📌 Pinned Messages</p>
           {pinnedMessages.length === 0 && (
             <p className="text-gray-500 text-xs">No pinned messages yet</p>
@@ -377,7 +452,7 @@ export default function ChatWindow() {
 
       {/* Reply preview bar */}
       {replyingTo && (
-        <div className="px-4 pt-3 bg-gray-900 border-t border-gray-800 flex items-center justify-between">
+        <div className="px-4 pt-3 bg-gray-900/95 border-t border-gray-800 flex items-center justify-between">
           <div className="flex-1 min-w-0 border-l-2 border-green-400 pl-3 py-1">
             <p className="text-green-400 text-xs font-semibold">Replying to {replyingTo.sender?.name}</p>
             <p className="text-gray-400 text-xs truncate">
@@ -389,7 +464,7 @@ export default function ChatWindow() {
       )}
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-800 bg-gray-900">
+      <div className="p-4 border-t border-gray-800 bg-gray-900/95 backdrop-blur relative">
         <div className="flex gap-2 mb-3 flex-wrap">
           <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">
             ✨ Fix Grammar
@@ -413,7 +488,14 @@ export default function ChatWindow() {
           )}
         </div>
 
+        {showEmojiPicker && (
+          <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmojiPicker(false)} />
+        )}
+
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-yellow-400 transition-colors flex-shrink-0 text-lg">
+            😊
+          </button>
           <button onClick={() => setShowFileUpload(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">
             📎
           </button>
@@ -438,6 +520,26 @@ export default function ChatWindow() {
       {showFileUpload && <FileUpload onUpload={handleFileUpload} onClose={() => setShowFileUpload(false)} />}
       {showVoiceRecorder && <VoiceRecorder onUpload={handleFileUpload} onClose={() => setShowVoiceRecorder(false)} />}
       {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
+      {showOwnProfile && <ProfileModal onClose={() => setShowOwnProfile(false)} />}
+      {viewingProfile && <ProfileModal viewingUser={viewingProfile} onClose={closeProfile} />}
+      {showWallpaperPicker && (
+        <WallpaperPicker
+          chatId={chatId}
+          currentWallpaper={wallpaper}
+          onSelect={(url) => { setWallpaper(url); setShowWallpaperPicker(false); }}
+          onClose={() => setShowWallpaperPicker(false)}
+        />
+      )}
+      {showBlockConfirm && (
+        <ConfirmModal
+          title={`Block ${selectedUser?.name}?`}
+          message="They won't be able to message you anymore."
+          confirmText="Block"
+          danger
+          onConfirm={handleBlockFromHeader}
+          onCancel={() => setShowBlockConfirm(false)}
+        />
+      )}
 
       {/* Video/Voice Call */}
       {activeCall && selectedUser && (

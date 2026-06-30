@@ -15,6 +15,9 @@ const useChatStore = create((set, get) => ({
   searchResults: [],
   searchQuery: '',
   showSearch: false,
+  blockedUsers: [],
+  viewingProfile: null,
+  wallpapers: {},
 
   getUsers: async () => {
     try {
@@ -61,7 +64,6 @@ const useChatStore = create((set, get) => ({
 
   addMessage: (message) => {
     set((state) => {
-      // Avoid duplicate if message already exists (e.g. socket + REST both fire)
       if (state.messages.find(m => m._id === message._id)) return state;
       return { messages: [...state.messages, message] };
     });
@@ -176,6 +178,64 @@ const useChatStore = create((set, get) => ({
       set({ groups: data });
     } catch (error) {
       console.error(error);
+    }
+  },
+
+  // --- Profile / Block / Report ---
+  viewProfile: async (userId) => {
+    try {
+      const { data } = await axios.get(`/auth/user/${userId}`);
+      set({ viewingProfile: data });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+
+  closeProfile: () => set({ viewingProfile: null }),
+
+  getBlockedUsers: async () => {
+    try {
+      const { data } = await axios.get('/auth/blocked');
+      set({ blockedUsers: data });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+
+  blockUser: async (userId) => {
+    try {
+      await axios.put(`/auth/block/${userId}`);
+      set((state) => ({
+        users: state.users.filter(u => u._id !== userId),
+        selectedUser: state.selectedUser?._id === userId ? null : state.selectedUser,
+      }));
+      get().getBlockedUsers();
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  },
+
+  unblockUser: async (userId) => {
+    try {
+      await axios.put(`/auth/unblock/${userId}`);
+      get().getBlockedUsers();
+      get().getUsers();
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  },
+
+  reportUser: async (userId, reason) => {
+    try {
+      await axios.post(`/auth/report/${userId}`, { reason });
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
     }
   },
 }));
