@@ -27,6 +27,11 @@ const messageSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    default: null
+  },
   reactions: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     emoji: String
@@ -44,6 +49,10 @@ const messageSchema = new mongoose.Schema({
     default: false
   },
   isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  isPinned: {
     type: Boolean,
     default: false
   },
