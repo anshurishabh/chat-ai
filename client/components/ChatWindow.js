@@ -8,20 +8,17 @@ import AIAssistant from './AIAssistant';
 import FileUpload from './FileUpload';
 import VoiceRecorder from './VoiceRecorder';
 import VideoCall from './VideoCall';
-import axios from '../utils/axios';
-
-const BACKGROUNDS = [
-  { name: 'Default', value: 'bg-gray-950' },
-  { name: 'Dark Blue', value: 'bg-blue-950' },
-  { name: 'Dark Green', value: 'bg-green-950' },
-  { name: 'Dark Purple', value: 'bg-purple-950' },
-  { name: 'Dark Red', value: 'bg-red-950' },
-  { name: 'Midnight', value: 'bg-slate-900' },
-];
+import MessageBubble from './MessageBubble';
 
 export default function ChatWindow() {
   const { user } = useAuthStore();
-  const { selectedUser, selectedGroup, messages, getMessages, getGroupMessages, typingUsers, loading, onlineUsers, setSelectedUser, setSelectedGroup } = useChatStore();
+  const {
+    selectedUser, selectedGroup, messages, getMessages, getGroupMessages,
+    typingUsers, loading, onlineUsers,
+    replyingTo, clearReplyingTo,
+    pinnedMessages, getPinnedMessages,
+    showSearch, toggleSearch, searchQuery, searchResults, searchMessages,
+  } = useChatStore();
   const { sendMessage, sendTyping, stopTyping, joinGroup, setCallbacks, socket } = useSocket();
   const { smartReplies, clearSmartReplies, translateMessage, summarizeChat, correctGrammar } = useAIStore();
 
@@ -34,32 +31,39 @@ export default function ChatWindow() {
   const [translatedMsg, setTranslatedMsg] = useState('');
   const [summary, setSummary] = useState('');
   const [showSummary, setShowSummary] = useState(false);
+  const [showPinnedBar, setShowPinnedBar] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
-  const [background, setBackground] = useState('bg-gray-950');
-  const [showBgPicker, setShowBgPicker] = useState(false);
-  const [editingMsg, setEditingMsg] = useState(null);
-  const [editInput, setEditInput] = useState('');
 
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
+  const messageRefs = useRef({});
 
   useEffect(() => {
     setCallbacks({
       onIncomingCall: (data) => setIncomingCall(data),
-      onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
+      onCallEnded: () => {
+        setActiveCall(null);
+        setIncomingCall(null);
+      },
     });
   }, []);
 
   useEffect(() => {
-    if (selectedUser) getMessages(selectedUser._id);
+    if (selectedUser) {
+      getMessages(selectedUser._id);
+      getPinnedMessages();
+    }
     if (selectedGroup) {
       getGroupMessages(selectedGroup._id);
+      getPinnedMessages();
       joinGroup(selectedGroup._id);
     }
     clearSmartReplies();
+    clearReplyingTo();
     setSummary('');
     setShowSummary(false);
+    setShowPinnedBar(false);
   }, [selectedUser, selectedGroup]);
 
   useEffect(() => {
@@ -76,11 +80,13 @@ export default function ChatWindow() {
       type: 'text',
       receiver: selectedUser?._id || null,
       groupId: selectedGroup?._id || null,
+      replyTo: replyingTo?._id || null,
     };
 
     sendMessage(messageData);
     setInput('');
     clearSmartReplies();
+    clearReplyingTo();
   };
 
   const handleFileUpload = (fileData) => {
@@ -91,8 +97,10 @@ export default function ChatWindow() {
       fileUrl: fileData.url,
       receiver: selectedUser?._id || null,
       groupId: selectedGroup?._id || null,
+      replyTo: replyingTo?._id || null,
     };
     sendMessage(messageData);
+    clearReplyingTo();
   };
 
   const handleTyping = (e) => {
@@ -110,6 +118,9 @@ export default function ChatWindow() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+    if (e.key === 'Escape' && replyingTo) {
+      clearReplyingTo();
     }
   };
 
@@ -131,106 +142,23 @@ export default function ChatWindow() {
     setShowSummary(true);
   };
 
-  const handleDeleteMessage = async (msgId) => {
-    try {
-      await axios.delete(`/messages/${msgId}`);
-      getMessages(selectedUser?._id || selectedGroup?._id);
-    } catch (error) {
-      console.error('Delete error:', error);
+  const startVideoCall = () => {
+    if (!selectedUser) return;
+    setActiveCall({ type: 'video', isIncoming: false });
+  };
+
+  const startVoiceCall = () => {
+    if (!selectedUser) return;
+    setActiveCall({ type: 'voice', isIncoming: false });
+  };
+
+  const scrollToMessage = (messageId) => {
+    const el = messageRefs.current[messageId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-green-400');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500);
     }
-  };
-
-  const handleEditMessage = async (msgId) => {
-    try {
-      await axios.put(`/messages/${msgId}`, { content: editInput });
-      setEditingMsg(null);
-      setEditInput('');
-      if (selectedUser) getMessages(selectedUser._id);
-      if (selectedGroup) getGroupMessages(selectedGroup._id);
-    } catch (error) {
-      console.error('Edit error:', error);
-    }
-  };
-
-  const handleBack = () => {
-    setSelectedUser(null);
-    setSelectedGroup(null);
-  };
-
-  const startVideoCall = () => { if (!selectedUser) return; setActiveCall({ type: 'video', isIncoming: false }); };
-  const startVoiceCall = () => { if (!selectedUser) return; setActiveCall({ type: 'voice', isIncoming: false }); };
-
-  const renderMessage = (msg) => {
-    const isMe = msg.sender._id === user._id || msg.sender === user._id;
-    const isEditing = editingMsg === msg._id;
-
-    const renderContent = () => {
-      if (msg.isDeleted) return <p className="text-gray-400 text-xs italic">🚫 Message deleted</p>;
-      switch (msg.type) {
-        case 'image':
-          return <img src={msg.fileUrl} alt="image" className="max-w-xs rounded-lg cursor-pointer hover:opacity-90" onClick={() => window.open(msg.fileUrl, '_blank')} />;
-        case 'video':
-          return <video src={msg.fileUrl} controls className="max-w-xs rounded-lg" />;
-        case 'audio':
-          return <div className="flex items-center gap-2"><span>🎤</span><audio src={msg.fileUrl} controls className="max-w-xs" /></div>;
-        case 'pdf':
-          return <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-300 hover:underline"><span>📄</span><span className="text-sm">{msg.content}</span></a>;
-        default:
-          return isEditing ? (
-            <div className="flex gap-2">
-              <input
-                value={editInput}
-                onChange={(e) => setEditInput(e.target.value)}
-                className="bg-gray-700 text-white px-2 py-1 rounded text-sm flex-1 focus:outline-none"
-                autoFocus
-              />
-              <button onClick={() => handleEditMessage(msg._id)} className="text-green-400 text-xs">✓</button>
-              <button onClick={() => setEditingMsg(null)} className="text-red-400 text-xs">✕</button>
-            </div>
-          ) : (
-            <p className="text-sm">{msg.content} {msg.isEdited && <span className="text-xs opacity-50">(edited)</span>}</p>
-          );
-      }
-    };
-
-    return (
-      <div key={msg._id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
-        {!isMe && (
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs mr-2 flex-shrink-0 self-end overflow-hidden">
-            {msg.sender?.avatar ? <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" /> : msg.sender?.name?.charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="flex flex-col">
-          <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${isMe ? 'bg-gradient-to-br from-green-500 to-green-600 text-white rounded-br-none' : 'bg-gray-800 text-white rounded-bl-none'}`}>
-            {!isMe && selectedGroup && <p className="text-green-400 text-xs font-semibold mb-1">{msg.sender?.name}</p>}
-            {renderContent()}
-            <p className={`text-xs mt-1 ${isMe ? 'text-green-200' : 'text-gray-400'}`}>
-              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              {isMe && ' ✓✓'}
-            </p>
-          </div>
-          {/* Message Actions */}
-          {isMe && !msg.isDeleted && (
-            <div className="flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-              {msg.type === 'text' && (
-                <button
-                  onClick={() => { setEditingMsg(msg._id); setEditInput(msg.content); }}
-                  className="text-gray-400 hover:text-blue-400 text-xs"
-                >
-                  ✏️ Edit
-                </button>
-              )}
-              <button
-                onClick={() => handleDeleteMessage(msg._id)}
-                className="text-gray-400 hover:text-red-400 text-xs"
-              >
-                🗑️ Delete
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
   };
 
   if (!selectedUser && !selectedGroup) {
@@ -251,21 +179,15 @@ export default function ChatWindow() {
   }
 
   const chatName = selectedUser?.name || selectedGroup?.name;
+  const isGroup = !!selectedGroup;
 
   return (
-    <div className={`flex-1 h-screen ${background} flex flex-col relative`}>
+    <div className="flex-1 h-screen bg-gray-950 flex flex-col relative">
       {/* Chat Header */}
-      <div className="p-4 border-b border-gray-800 bg-gray-900 flex items-center justify-between">
+      <div className="p-4 border-b border-gray-800 bg-gray-900 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          {/* Back Button */}
-          <button
-            onClick={handleBack}
-            className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-          >
-            ←
-          </button>
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-            {selectedUser?.avatar ? <img src={selectedUser.avatar} alt="" className="w-full h-full object-cover" /> : chatName?.charAt(0).toUpperCase()}
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+            {chatName?.charAt(0).toUpperCase()}
           </div>
           <div>
             <p className="text-white font-semibold">{chatName}</p>
@@ -273,40 +195,100 @@ export default function ChatWindow() {
               <p className="text-green-400 text-xs animate-pulse">✍️ typing...</p>
             ) : (
               <p className="text-gray-400 text-xs">
-                {selectedUser ? (onlineUsers?.includes(selectedUser._id) ? '🟢 Online' : '⚫ Offline') : `👥 ${selectedGroup?.members?.length} members`}
+                {selectedUser
+                  ? (onlineUsers?.includes(selectedUser._id) ? '🟢 Online' : '⚫ Offline')
+                  : `👥 ${selectedGroup?.members?.length} members`}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {selectedUser && (
             <>
-              <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">📞</button>
-              <button onClick={startVideoCall} className="w-9 h-9 bg-gray-800 hover:bg-blue-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all" title="Video Call">📹</button>
+              <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">
+                📞
+              </button>
+              <button onClick={startVideoCall} className="w-9 h-9 bg-gray-800 hover:bg-blue-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all" title="Video Call">
+                📹
+              </button>
             </>
           )}
-          <button onClick={() => setShowBgPicker(!showBgPicker)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">🎨</button>
-          <button onClick={handleSummarize} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">📝</button>
-          <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">🤖</button>
+          <button
+            onClick={toggleSearch}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${showSearch ? 'bg-green-500 text-black' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}
+            title="Search messages"
+          >
+            🔍
+          </button>
+          <button
+            onClick={() => setShowPinnedBar(!showPinnedBar)}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all relative ${showPinnedBar ? 'bg-yellow-500 text-black' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}
+            title="Pinned messages"
+          >
+            📌
+            {pinnedMessages.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">
+                {pinnedMessages.length}
+              </span>
+            )}
+          </button>
+          <button onClick={handleSummarize} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">
+            📝 Summary
+          </button>
+          <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">
+            🤖 AI
+          </button>
         </div>
       </div>
 
-      {/* Background Picker */}
-      {showBgPicker && (
-        <div className="absolute top-20 right-4 bg-gray-800 border border-gray-700 rounded-xl p-4 z-40 shadow-2xl">
-          <p className="text-white text-sm font-semibold mb-3">🎨 Chat Background</p>
-          <div className="grid grid-cols-3 gap-2">
-            {BACKGROUNDS.map((bg) => (
-              <button
-                key={bg.value}
-                onClick={() => { setBackground(bg.value); setShowBgPicker(false); }}
-                className={`${bg.value} px-3 py-2 rounded-lg text-white text-xs border-2 ${background === bg.value ? 'border-green-400' : 'border-transparent'}`}
-              >
-                {bg.name}
-              </button>
-            ))}
-          </div>
+      {/* Search bar */}
+      {showSearch && (
+        <div className="bg-gray-900 border-b border-gray-800 p-3">
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => searchMessages(e.target.value)}
+            placeholder="Search in this conversation..."
+            className="w-full bg-gray-800 text-white px-4 py-2 rounded-full border border-gray-700 focus:outline-none focus:border-green-400 text-sm"
+          />
+          {searchQuery && (
+            <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+              {searchResults.length === 0 && (
+                <p className="text-gray-500 text-xs px-2">No messages found</p>
+              )}
+              {searchResults.map((m) => (
+                <div
+                  key={m._id}
+                  onClick={() => { scrollToMessage(m._id); toggleSearch(); }}
+                  className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer"
+                >
+                  <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
+                  <p className="text-white text-xs truncate">{m.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pinned messages bar */}
+      {showPinnedBar && (
+        <div className="bg-gray-900 border-b border-gray-800 p-3 max-h-40 overflow-y-auto">
+          <p className="text-yellow-400 text-xs font-semibold mb-2">📌 Pinned Messages</p>
+          {pinnedMessages.length === 0 && (
+            <p className="text-gray-500 text-xs">No pinned messages yet</p>
+          )}
+          {pinnedMessages.map((m) => (
+            <div
+              key={m._id}
+              onClick={() => { scrollToMessage(m._id); setShowPinnedBar(false); }}
+              className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer mb-1"
+            >
+              <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
+              <p className="text-white text-xs truncate">{m.type === 'text' ? m.content : '📎 Attachment'}</p>
+            </div>
+          ))}
         </div>
       )}
 
@@ -321,7 +303,7 @@ export default function ChatWindow() {
         </div>
       )}
 
-      {/* Incoming Call */}
+      {/* Incoming Call Banner */}
       {incomingCall && !activeCall && (
         <div className="absolute top-20 left-1/2 transform -translate-x-1/2 w-96 bg-gray-800 border border-green-500 rounded-xl p-4 z-40 shadow-2xl">
           <div className="flex items-center justify-between">
@@ -337,9 +319,14 @@ export default function ChatWindow() {
             <div className="flex gap-2">
               <button onClick={() => setIncomingCall(null)} className="w-10 h-10 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-xl">📵</button>
               <button
-                onClick={() => { setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal }); setIncomingCall(null); }}
+                onClick={() => {
+                  setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal });
+                  setIncomingCall(null);
+                }}
                 className="w-10 h-10 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center text-xl animate-bounce"
-              >📞</button>
+              >
+                📞
+              </button>
             </div>
           </div>
         </div>
@@ -348,7 +335,23 @@ export default function ChatWindow() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading && <div className="text-center text-gray-400 text-sm">Loading messages...</div>}
-        {messages.map((msg) => renderMessage(msg))}
+        {messages.map((msg) => {
+          const isMe = msg.sender._id === user._id || msg.sender === user._id;
+          return (
+            <div
+              key={msg._id}
+              ref={(el) => { messageRefs.current[msg._id] = el; }}
+              className="rounded-2xl transition-all"
+            >
+              <MessageBubble
+                msg={msg}
+                isMe={isMe}
+                isGroup={isGroup}
+                onScrollToMessage={scrollToMessage}
+              />
+            </div>
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -356,7 +359,9 @@ export default function ChatWindow() {
       {smartReplies.length > 0 && (
         <div className="px-4 py-2 flex gap-2 overflow-x-auto border-t border-gray-800">
           {smartReplies.map((reply, i) => (
-            <button key={i} onClick={() => handleSend(reply)} className="whitespace-nowrap bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-full border border-gray-600 hover:border-green-400 transition-colors">{reply}</button>
+            <button key={i} onClick={() => handleSend(reply)} className="whitespace-nowrap bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-full border border-gray-600 hover:border-green-400 transition-colors">
+              {reply}
+            </button>
           ))}
         </div>
       )}
@@ -370,11 +375,28 @@ export default function ChatWindow() {
         </div>
       )}
 
+      {/* Reply preview bar */}
+      {replyingTo && (
+        <div className="px-4 pt-3 bg-gray-900 border-t border-gray-800 flex items-center justify-between">
+          <div className="flex-1 min-w-0 border-l-2 border-green-400 pl-3 py-1">
+            <p className="text-green-400 text-xs font-semibold">Replying to {replyingTo.sender?.name}</p>
+            <p className="text-gray-400 text-xs truncate">
+              {replyingTo.type === 'text' ? replyingTo.content : '📎 Attachment'}
+            </p>
+          </div>
+          <button onClick={clearReplyingTo} className="text-gray-400 hover:text-white px-3">✕</button>
+        </div>
+      )}
+
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-gray-900">
         <div className="flex gap-2 mb-3 flex-wrap">
-          <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">✨ Fix Grammar</button>
-          <button onClick={() => setShowTranslate(!showTranslate)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">🌍 Translate</button>
+          <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">
+            ✨ Fix Grammar
+          </button>
+          <button onClick={() => setShowTranslate(!showTranslate)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">
+            🌍 Translate
+          </button>
           {showTranslate && (
             <>
               <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} className="bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600">
@@ -392,14 +414,18 @@ export default function ChatWindow() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowFileUpload(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">📎</button>
-          <button onClick={() => setShowVoiceRecorder(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">🎤</button>
+          <button onClick={() => setShowFileUpload(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">
+            📎
+          </button>
+          <button onClick={() => setShowVoiceRecorder(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">
+            🎤
+          </button>
           <input
             type="text"
             value={input}
             onChange={handleTyping}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder={replyingTo ? 'Type your reply...' : 'Type a message...'}
             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-full border border-gray-700 focus:outline-none focus:border-green-400 text-sm transition-colors"
           />
           <button onClick={() => handleSend()} className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 rounded-full flex items-center justify-center transition-all transform hover:scale-105 flex-shrink-0">
@@ -408,10 +434,12 @@ export default function ChatWindow() {
         </div>
       </div>
 
+      {/* Modals */}
       {showFileUpload && <FileUpload onUpload={handleFileUpload} onClose={() => setShowFileUpload(false)} />}
       {showVoiceRecorder && <VoiceRecorder onUpload={handleFileUpload} onClose={() => setShowVoiceRecorder(false)} />}
       {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
 
+      {/* Video/Voice Call */}
       {activeCall && selectedUser && (
         <VideoCall
           socket={socket}
