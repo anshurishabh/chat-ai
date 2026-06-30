@@ -15,9 +15,14 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const clientRef = useRef(null);
   const localAudioTrackRef = useRef(null);
   const localVideoTrackRef = useRef(null);
+  const hasJoinedRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    if (!isIncoming) {
+    isMountedRef.current = true;
+
+    if (!isIncoming && !hasJoinedRef.current) {
+      hasJoinedRef.current = true;
       notifyAndJoin();
     }
 
@@ -33,6 +38,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
     }
 
     return () => {
+      isMountedRef.current = false;
       leaveChannel();
       if (socket) {
         socket.off('call-accepted');
@@ -62,7 +68,10 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         await client.subscribe(user, mediaType);
 
         if (mediaType === 'video') {
-          setRemoteUsers(prev => [...prev, user]);
+          setRemoteUsers(prev => {
+            if (prev.find(u => u.uid === user.uid)) return prev;
+            return [...prev, user];
+          });
           setTimeout(() => {
             user.videoTrack?.play(`remote-video-${user.uid}`);
           }, 500);
@@ -72,7 +81,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           user.audioTrack?.play();
         }
 
-        setCallStatus('connected');
+        if (isMountedRef.current) setCallStatus('connected');
       });
 
       client.on('user-unpublished', (user) => {
@@ -81,11 +90,29 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
 
       await client.join(APP_ID, CHANNEL, TOKEN || null, currentUser._id);
 
+      if (!isMountedRef.current) {
+        await client.leave();
+        return;
+      }
+
       const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+
+      if (!isMountedRef.current) {
+        audioTrack.close();
+        await client.leave();
+        return;
+      }
       localAudioTrackRef.current = audioTrack;
 
       if (!isVoiceOnly) {
         const videoTrack = await AgoraRTC.createCameraVideoTrack();
+
+        if (!isMountedRef.current) {
+          videoTrack.close();
+          audioTrack.close();
+          await client.leave();
+          return;
+        }
         localVideoTrackRef.current = videoTrack;
         videoTrack.play('local-video');
         await client.publish([audioTrack, videoTrack]);
@@ -93,13 +120,18 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         await client.publish([audioTrack]);
       }
 
-      setCallStatus('connected');
+      if (isMountedRef.current) setCallStatus('connected');
     } catch (err) {
-      console.error('Agora join error:', err);
+      if (err?.code !== 'OPERATION_ABORTED') {
+        console.error('Agora join error:', err);
+      }
     }
   };
 
   const answerCall = async () => {
+    if (hasJoinedRef.current) return;
+    hasJoinedRef.current = true;
+
     socket.emit('answer-call', {
       to: selectedUser._id,
       channel: CHANNEL,
@@ -109,9 +141,13 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   };
 
   const leaveChannel = async () => {
-    localAudioTrackRef.current?.close();
-    localVideoTrackRef.current?.close();
-    await clientRef.current?.leave();
+    try {
+      localAudioTrackRef.current?.close();
+      localVideoTrackRef.current?.close();
+      await clientRef.current?.leave();
+    } catch (err) {
+      // ignore cleanup errors
+    }
   };
 
   const endCall = async () => {
@@ -163,7 +199,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
 
-          {/* Remote Videos */}
           {remoteUsers.map(user => (
             <div
               key={user.uid}
@@ -172,7 +207,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             />
           ))}
 
-          {/* No remote video placeholder */}
           {remoteUsers.length === 0 && callStatus === 'connected' && (
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-center">
@@ -184,13 +218,11 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             </div>
           )}
 
-          {/* Local Video */}
           <div
             id="local-video"
             className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400"
           />
 
-          {/* Incoming Call UI */}
           {callStatus === 'incoming' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
@@ -205,7 +237,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             </div>
           )}
 
-          {/* Calling UI */}
           {callStatus === 'calling' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-4xl mb-4 animate-pulse">
