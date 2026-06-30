@@ -2,7 +2,6 @@ const Message = require('../models/Message');
 const { sendNotification } = require('../controllers/notificationController');
 
 const onlineUsers = new Map();
-const callSignals = new Map();
 
 const socketHandler = (io) => {
   io.on('connection', (socket) => {
@@ -15,7 +14,8 @@ const socketHandler = (io) => {
 
     socket.on('send-message', async (data) => {
       try {
-        const { sender, receiver, groupId, content, type, fileUrl, isSelfDestruct } = data;
+        const { sender, receiver, groupId, content, type, fileUrl, isSelfDestruct, replyTo } = data;
+
         const message = await Message.create({
           sender,
           receiver: receiver || null,
@@ -24,13 +24,24 @@ const socketHandler = (io) => {
           type: type || 'text',
           fileUrl: fileUrl || '',
           isSelfDestruct: isSelfDestruct || false,
+          replyTo: replyTo || null,
         });
-        const populated = await message.populate('sender', 'name avatar');
+
+        const populated = await message.populate([
+          { path: 'sender', select: 'name avatar' },
+          {
+            path: 'replyTo',
+            select: 'content sender type isDeleted',
+            populate: { path: 'sender', select: 'name' },
+          },
+        ]);
+
         if (receiver) {
           const receiverSocketId = onlineUsers.get(receiver);
           if (receiverSocketId) {
             io.to(receiverSocketId).emit('receive-message', populated);
           }
+
           if (!onlineUsers.has(receiver)) {
             await sendNotification(receiver, {
               title: `New message from ${populated.sender.name}`,
@@ -39,9 +50,11 @@ const socketHandler = (io) => {
             });
           }
         }
+
         if (groupId) {
           socket.to(groupId).emit('receive-message', populated);
         }
+
         socket.emit('message-sent', populated);
       } catch (err) {
         console.error('Socket message error:', err.message);
@@ -67,26 +80,17 @@ const socketHandler = (io) => {
       socket.join(groupId);
     });
 
-    // Call Events — trickle ICE support
-    socket.on('call-user', ({ to, from, signal, callerName, isVoiceOnly }) => {
+    socket.on('call-user', ({ to, from, signal, callerName, isVoiceOnly, channel }) => {
       const receiverSocketId = onlineUsers.get(to);
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit('incoming-call', { from, signal, callerName, isVoiceOnly });
+        io.to(receiverSocketId).emit('incoming-call', { from, signal, callerName, isVoiceOnly, channel });
       }
     });
 
-    socket.on('answer-call', ({ to, signal }) => {
+    socket.on('answer-call', ({ to, signal, channel }) => {
       const callerSocketId = onlineUsers.get(to);
       if (callerSocketId) {
         io.to(callerSocketId).emit('call-accepted', signal);
-      }
-    });
-
-    // Trickle ICE candidates relay
-    socket.on('ice-candidate', ({ to, candidate }) => {
-      const receiverSocketId = onlineUsers.get(to);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('ice-candidate', { candidate });
       }
     });
 
