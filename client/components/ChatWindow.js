@@ -13,6 +13,7 @@ import EmojiPicker from './EmojiPicker';
 import ProfileModal from './ProfileModal';
 import WallpaperPicker from './WallpaperPicker';
 import ConfirmModal from './ConfirmModal';
+import ImageGeneratorModal from './ImageGeneratorModal';
 
 export default function ChatWindow() {
   const { user } = useAuthStore();
@@ -42,44 +43,33 @@ export default function ChatWindow() {
   const [activeCall, setActiveCall] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
-  const [showOwnProfile, setShowOwnProfile] = useState(false);
   const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
   const [wallpaper, setWallpaper] = useState('');
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showImageGenerator, setShowImageGenerator] = useState(false);
+  const [showImagineHint, setShowImagineHint] = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
   const messageRefs = useRef({});
-
   const chatId = selectedUser?._id || selectedGroup?._id;
 
   useEffect(() => {
     setCallbacks({
       onIncomingCall: (data) => setIncomingCall(data),
-      onCallEnded: () => {
-        setActiveCall(null);
-        setIncomingCall(null);
-      },
+      onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
     });
   }, []);
 
   useEffect(() => {
-    if (selectedUser) {
-      getMessages(selectedUser._id);
-      getPinnedMessages();
-    }
-    if (selectedGroup) {
-      getGroupMessages(selectedGroup._id);
-      getPinnedMessages();
-      joinGroup(selectedGroup._id);
-    }
+    if (selectedUser) { getMessages(selectedUser._id); getPinnedMessages(); }
+    if (selectedGroup) { getGroupMessages(selectedGroup._id); getPinnedMessages(); joinGroup(selectedGroup._id); }
     clearSmartReplies();
     clearReplyingTo();
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
     setShowHeaderMenu(false);
-
     const savedWallpaper = user?.wallpapers?.[chatId] || '';
     setWallpaper(savedWallpaper);
   }, [selectedUser, selectedGroup]);
@@ -91,6 +81,20 @@ export default function ChatWindow() {
   const handleSend = (text) => {
     const content = text || input;
     if (!content.trim()) return;
+
+    // /imagine command detect karo
+    if (content.trim().startsWith('/imagine ')) {
+      setInput('');
+      setShowImageGenerator(true);
+      const promptFromCommand = content.trim().replace('/imagine ', '');
+      if (promptFromCommand) {
+        setTimeout(() => {
+          const promptInput = document.querySelector('#imagine-prompt');
+          if (promptInput) promptInput.value = promptFromCommand;
+        }, 300);
+      }
+      return;
+    }
 
     const messageData = {
       sender: user._id,
@@ -105,6 +109,19 @@ export default function ChatWindow() {
     setInput('');
     clearSmartReplies();
     clearReplyingTo();
+    setShowImagineHint(false);
+  };
+
+  const handleImageSend = (imageData) => {
+    const messageData = {
+      sender: user._id,
+      content: `🎨 AI Generated: ${imageData.prompt}`,
+      type: 'image',
+      fileUrl: imageData.imageUrl,
+      receiver: selectedUser?._id || null,
+      groupId: selectedGroup?._id || null,
+    };
+    sendMessage(messageData);
   };
 
   const handleFileUpload = (fileData) => {
@@ -122,7 +139,16 @@ export default function ChatWindow() {
   };
 
   const handleTyping = (e) => {
-    setInput(e.target.value);
+    const value = e.target.value;
+    setInput(value);
+
+    // /imagine hint dikhao
+    if (value === '/imagine' || value.startsWith('/imagine ')) {
+      setShowImagineHint(true);
+    } else {
+      setShowImagineHint(false);
+    }
+
     if (selectedUser) {
       sendTyping({ sender: user._id, receiver: selectedUser._id });
       clearTimeout(typingTimeout.current);
@@ -137,13 +163,12 @@ export default function ChatWindow() {
       e.preventDefault();
       handleSend();
     }
-    if (e.key === 'Escape' && replyingTo) {
-      clearReplyingTo();
-    }
+    if (e.key === 'Escape' && replyingTo) clearReplyingTo();
   };
 
   const handleEmojiSelect = (emoji) => {
     setInput((prev) => prev + emoji);
+    setShowEmojiPicker(false);
   };
 
   const handleTranslate = async () => {
@@ -164,15 +189,8 @@ export default function ChatWindow() {
     setShowSummary(true);
   };
 
-  const startVideoCall = () => {
-    if (!selectedUser) return;
-    setActiveCall({ type: 'video', isIncoming: false });
-  };
-
-  const startVoiceCall = () => {
-    if (!selectedUser) return;
-    setActiveCall({ type: 'voice', isIncoming: false });
-  };
+  const startVideoCall = () => { if (!selectedUser) return; setActiveCall({ type: 'video', isIncoming: false }); };
+  const startVoiceCall = () => { if (!selectedUser) return; setActiveCall({ type: 'voice', isIncoming: false }); };
 
   const scrollToMessage = (messageId) => {
     const el = messageRefs.current[messageId];
@@ -198,7 +216,8 @@ export default function ChatWindow() {
       <div className="flex-1 h-screen bg-gray-950 flex flex-col items-center justify-center">
         <div className="text-8xl mb-6 animate-bounce">💬</div>
         <h2 className="text-white text-3xl font-bold mb-3">Welcome to NexChat</h2>
-        <p className="text-gray-400 mb-8">Select a user or group to start chatting</p>
+        <p className="text-gray-400 mb-2">Select a user or group to start chatting</p>
+        <p className="text-gray-600 text-sm mb-8">Type <span className="text-green-400 font-mono">/imagine</span> in chat to generate AI images</p>
         <button
           onClick={() => setShowAI(true)}
           className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-400 hover:to-blue-400 text-black font-bold px-8 py-4 rounded-full transition-all transform hover:scale-105"
@@ -220,10 +239,7 @@ export default function ChatWindow() {
     >
       {/* Chat Header */}
       <div className="p-4 border-b border-gray-800 bg-gray-900/95 backdrop-blur flex items-center justify-between flex-wrap gap-2">
-        <div
-          className="flex items-center gap-3 cursor-pointer"
-          onClick={handleViewProfile}
-        >
+        <div className="flex items-center gap-3 cursor-pointer" onClick={handleViewProfile}>
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
             {selectedUser?.avatar ? (
               <img src={selectedUser.avatar} alt="avatar" className="w-full h-full object-cover" />
@@ -248,14 +264,17 @@ export default function ChatWindow() {
         <div className="flex items-center gap-2 flex-wrap relative">
           {selectedUser && (
             <>
-              <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">
-                📞
-              </button>
-              <button onClick={startVideoCall} className="w-9 h-9 bg-gray-800 hover:bg-blue-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all" title="Video Call">
-                📹
-              </button>
+              <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">📞</button>
+              <button onClick={startVideoCall} className="w-9 h-9 bg-gray-800 hover:bg-blue-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all" title="Video Call">📹</button>
             </>
           )}
+          <button
+            onClick={() => setShowImageGenerator(true)}
+            className="w-9 h-9 bg-gray-800 hover:bg-purple-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all"
+            title="Generate AI Image"
+          >
+            🎨
+          </button>
           <button
             onClick={toggleSearch}
             className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${showSearch ? 'bg-green-500 text-black' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}
@@ -275,41 +294,21 @@ export default function ChatWindow() {
               </span>
             )}
           </button>
-          <button onClick={handleSummarize} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">
-            📝 Summary
-          </button>
-          <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">
-            🤖 AI
-          </button>
+          <button onClick={handleSummarize} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">📝 Summary</button>
+          <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">🤖 AI</button>
 
           {/* 3-dot menu */}
           <div className="relative">
-            <button
-              onClick={() => setShowHeaderMenu(!showHeaderMenu)}
-              className="w-9 h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400"
-            >
-              ⋮
-            </button>
+            <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="w-9 h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400">⋮</button>
             {showHeaderMenu && (
               <div className="absolute right-0 top-11 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-30 overflow-hidden">
                 {selectedUser && (
-                  <button onClick={handleViewProfile} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">
-                    👤 View Profile
-                  </button>
+                  <button onClick={handleViewProfile} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">👤 View Profile</button>
                 )}
-                <button
-                  onClick={() => { setShowWallpaperPicker(true); setShowHeaderMenu(false); }}
-                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700"
-                >
-                  🎨 Change Wallpaper
-                </button>
+                <button onClick={() => { setShowWallpaperPicker(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">🎨 Change Wallpaper</button>
+                <button onClick={() => { setShowImageGenerator(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-purple-400 hover:bg-gray-700">🖼️ AI Image Generator</button>
                 {selectedUser && (
-                  <button
-                    onClick={() => { setShowBlockConfirm(true); setShowHeaderMenu(false); }}
-                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700"
-                  >
-                    🚫 Block User
-                  </button>
+                  <button onClick={() => { setShowBlockConfirm(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700">🚫 Block User</button>
                 )}
               </div>
             )}
@@ -329,15 +328,9 @@ export default function ChatWindow() {
           />
           {searchQuery && (
             <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
-              {searchResults.length === 0 && (
-                <p className="text-gray-500 text-xs px-2">No messages found</p>
-              )}
+              {searchResults.length === 0 && <p className="text-gray-500 text-xs px-2">No messages found</p>}
               {searchResults.map((m) => (
-                <div
-                  key={m._id}
-                  onClick={() => { scrollToMessage(m._id); toggleSearch(); }}
-                  className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer"
-                >
+                <div key={m._id} onClick={() => { scrollToMessage(m._id); toggleSearch(); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer">
                   <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
                   <p className="text-white text-xs truncate">{m.content}</p>
                 </div>
@@ -351,15 +344,9 @@ export default function ChatWindow() {
       {showPinnedBar && (
         <div className="bg-gray-900/95 backdrop-blur border-b border-gray-800 p-3 max-h-40 overflow-y-auto">
           <p className="text-yellow-400 text-xs font-semibold mb-2">📌 Pinned Messages</p>
-          {pinnedMessages.length === 0 && (
-            <p className="text-gray-500 text-xs">No pinned messages yet</p>
-          )}
+          {pinnedMessages.length === 0 && <p className="text-gray-500 text-xs">No pinned messages yet</p>}
           {pinnedMessages.map((m) => (
-            <div
-              key={m._id}
-              onClick={() => { scrollToMessage(m._id); setShowPinnedBar(false); }}
-              className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer mb-1"
-            >
+            <div key={m._id} onClick={() => { scrollToMessage(m._id); setShowPinnedBar(false); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer mb-1">
               <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
               <p className="text-white text-xs truncate">{m.type === 'text' ? m.content : '📎 Attachment'}</p>
             </div>
@@ -413,17 +400,8 @@ export default function ChatWindow() {
         {messages.map((msg) => {
           const isMe = msg.sender._id === user._id || msg.sender === user._id;
           return (
-            <div
-              key={msg._id}
-              ref={(el) => { messageRefs.current[msg._id] = el; }}
-              className="rounded-2xl transition-all"
-            >
-              <MessageBubble
-                msg={msg}
-                isMe={isMe}
-                isGroup={isGroup}
-                onScrollToMessage={scrollToMessage}
-              />
+            <div key={msg._id} ref={(el) => { messageRefs.current[msg._id] = el; }} className="rounded-2xl transition-all">
+              <MessageBubble msg={msg} isMe={isMe} isGroup={isGroup} onScrollToMessage={scrollToMessage} />
             </div>
           );
         })}
@@ -455,37 +433,48 @@ export default function ChatWindow() {
         <div className="px-4 pt-3 bg-gray-900/95 border-t border-gray-800 flex items-center justify-between">
           <div className="flex-1 min-w-0 border-l-2 border-green-400 pl-3 py-1">
             <p className="text-green-400 text-xs font-semibold">Replying to {replyingTo.sender?.name}</p>
-            <p className="text-gray-400 text-xs truncate">
-              {replyingTo.type === 'text' ? replyingTo.content : '📎 Attachment'}
-            </p>
+            <p className="text-gray-400 text-xs truncate">{replyingTo.type === 'text' ? replyingTo.content : '📎 Attachment'}</p>
           </div>
           <button onClick={clearReplyingTo} className="text-gray-400 hover:text-white px-3">✕</button>
+        </div>
+      )}
+
+      {/* /imagine hint */}
+      {showImagineHint && (
+        <div className="px-4 pb-2 bg-gray-900/95">
+          <div
+            onClick={() => { handleSend(); }}
+            className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 border border-purple-500/40 rounded-xl px-4 py-2 cursor-pointer transition-colors"
+          >
+            <span className="text-2xl">🎨</span>
+            <div>
+              <p className="text-purple-400 text-xs font-semibold">AI Image Generator</p>
+              <p className="text-gray-400 text-xs">Press Enter to open with your prompt</p>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-gray-900/95 backdrop-blur relative">
         <div className="flex gap-2 mb-3 flex-wrap">
-          <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">
-            ✨ Fix Grammar
-          </button>
-          <button onClick={() => setShowTranslate(!showTranslate)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">
-            🌍 Translate
-          </button>
+          <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">✨ Fix Grammar</button>
+          <button onClick={() => setShowTranslate(!showTranslate)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">🌍 Translate</button>
           {showTranslate && (
             <>
               <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} className="bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600">
-                <option>Hindi</option>
-                <option>Spanish</option>
-                <option>French</option>
-                <option>German</option>
-                <option>Japanese</option>
-                <option>Arabic</option>
-                <option>English</option>
+                <option>Hindi</option><option>Spanish</option><option>French</option>
+                <option>German</option><option>Japanese</option><option>Arabic</option><option>English</option>
               </select>
               <button onClick={handleTranslate} className="bg-green-500 text-black text-xs px-2 py-1 rounded font-bold">Go</button>
             </>
           )}
+          <button
+            onClick={() => setShowImageGenerator(true)}
+            className="text-gray-400 hover:text-purple-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors"
+          >
+            🎨 /imagine
+          </button>
         </div>
 
         {showEmojiPicker && (
@@ -507,7 +496,7 @@ export default function ChatWindow() {
             value={input}
             onChange={handleTyping}
             onKeyDown={handleKeyDown}
-            placeholder={replyingTo ? 'Type your reply...' : 'Type a message...'}
+            placeholder="Type a message or /imagine ..."
             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-full border border-gray-700 focus:outline-none focus:border-green-400 text-sm transition-colors"
           />
           <button onClick={() => handleSend()} className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 rounded-full flex items-center justify-center transition-all transform hover:scale-105 flex-shrink-0">
@@ -520,7 +509,6 @@ export default function ChatWindow() {
       {showFileUpload && <FileUpload onUpload={handleFileUpload} onClose={() => setShowFileUpload(false)} />}
       {showVoiceRecorder && <VoiceRecorder onUpload={handleFileUpload} onClose={() => setShowVoiceRecorder(false)} />}
       {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
-      {showOwnProfile && <ProfileModal onClose={() => setShowOwnProfile(false)} />}
       {viewingProfile && <ProfileModal viewingUser={viewingProfile} onClose={closeProfile} />}
       {showWallpaperPicker && (
         <WallpaperPicker
@@ -528,6 +516,12 @@ export default function ChatWindow() {
           currentWallpaper={wallpaper}
           onSelect={(url) => { setWallpaper(url); setShowWallpaperPicker(false); }}
           onClose={() => setShowWallpaperPicker(false)}
+        />
+      )}
+      {showImageGenerator && (
+        <ImageGeneratorModal
+          onSend={handleImageSend}
+          onClose={() => setShowImageGenerator(false)}
         />
       )}
       {showBlockConfirm && (
@@ -540,8 +534,6 @@ export default function ChatWindow() {
           onCancel={() => setShowBlockConfirm(false)}
         />
       )}
-
-      {/* Video/Voice Call */}
       {activeCall && selectedUser && (
         <VideoCall
           socket={socket}

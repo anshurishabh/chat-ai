@@ -6,6 +6,7 @@ const useAIStore = create((set) => ({
   aiMessages: [],
   summary: '',
   loading: false,
+  imageLoading: false,
 
   getSmartReplies: async (messages) => {
     try {
@@ -23,7 +24,8 @@ const useAIStore = create((set) => ({
     try {
       const { data } = await axios.post('/ai/chat', { message, history });
       set((state) => ({
-        aiMessages: [...state.aiMessages, 
+        aiMessages: [
+          ...state.aiMessages,
           { role: 'user', content: message },
           { role: 'assistant', content: data.reply }
         ],
@@ -72,6 +74,19 @@ const useAIStore = create((set) => ({
       return data.corrected;
     } catch (error) {
       console.error(error);
+    }
+  },
+
+  generateImage: async (prompt) => {
+    set({ imageLoading: true });
+    try {
+      const { data } = await axios.post('/ai/generate-image', { prompt });
+      set({ imageLoading: false });
+      return data;
+    } catch (error) {
+      set({ imageLoading: false });
+      console.error(error);
+      return null;
     }
   },
 

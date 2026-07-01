@@ -26,7 +26,6 @@ const getSmartReplies = async (req, res) => {
 
 const chatWithAI = async (req, res) => {
   try {
-    console.log('GROQ KEY:', process.env.GROQ_API_KEY ? 'Found' : 'NOT FOUND');
     const { message, history } = req.body;
     const historyMessages = history?.map(h => ({
       role: h.role === 'assistant' ? 'assistant' : 'user',
@@ -127,4 +126,63 @@ const correctGrammar = async (req, res) => {
   }
 };
 
-module.exports = { getSmartReplies, chatWithAI, translateMessage, detectSentiment, summarizeChat, correctGrammar };
+// AI Image Generation using Hugging Face
+const generateImage = async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    if (!prompt || prompt.trim().length === 0) {
+      return res.status(400).json({ message: 'Prompt is required' });
+    }
+
+    console.log('Generating image for prompt:', prompt);
+
+    const response = await fetch(
+      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            num_inference_steps: 20,
+            guidance_scale: 7.5,
+            width: 512,
+            height: 512,
+          }
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      // Model loading hota hai pehli baar — retry karo
+      if (response.status === 503) {
+        return res.status(503).json({ message: 'Model is loading, please try again in 20 seconds', loading: true });
+      }
+      throw new Error(`HuggingFace error: ${error}`);
+    }
+
+    const imageBuffer = await response.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString('base64');
+    const imageUrl = `data:image/png;base64,${base64Image}`;
+
+    res.json({ imageUrl, prompt });
+  } catch (error) {
+    console.error('Image Generation Error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = {
+  getSmartReplies,
+  chatWithAI,
+  translateMessage,
+  detectSentiment,
+  summarizeChat,
+  correctGrammar,
+  generateImage
+};
