@@ -85,7 +85,11 @@ const useAIStore = create((set) => ({
       return data;
     } catch (error) {
       set({ imageLoading: false });
-      console.error(error);
+      if (error.response?.status === 503) {
+        console.warn('Image generation service unavailable:', error.response.data?.message);
+        return { error: 'Service unavailable', status: 'busy' };
+      }
+      console.error('Image generation error:', error.message);
       return null;
     }
   },

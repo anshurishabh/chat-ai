@@ -117,6 +117,22 @@ const generateImage = async (req, res) => {
     const { prompt } = req.body;
     if (!prompt?.trim()) return res.status(400).json({ message: 'Prompt is required' });
 
+    // DEVELOPMENT MODE: Use mock images if API key is missing
+    if (!process.env.HUGGINGFACE_API_KEY) {
+      console.warn('⚠️ HUGGINGFACE_API_KEY not set. Using mock images for development.');
+      
+      // Generate a random mock image using Unsplash or Picsum (free services)
+      const keywords = prompt.split(' ').filter(w => w.length > 3).slice(0, 2).join('+');
+      const mockImageUrl = `https://picsum.photos/512/512?random=${Date.now()}`;
+      
+      return res.json({ 
+        imageUrl: mockImageUrl, 
+        prompt,
+        mock: true,
+        message: '🎨 Using mock image (set HUGGINGFACE_API_KEY in .env for real AI generation)'
+      });
+    }
+
     // Multiple models try karo — agar ek fail ho to doosra
     const models = [
       'black-forest-labs/FLUX.1-schnell',
@@ -129,6 +145,9 @@ const generateImage = async (req, res) => {
 
     for (const model of models) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         const response = await fetch(
           `https://api-inference.huggingface.co/models/${model}`,
           {
@@ -142,8 +161,10 @@ const generateImage = async (req, res) => {
               inputs: prompt,
               parameters: { num_inference_steps: 25, guidance_scale: 7.5 }
             }),
+            signal: controller.signal
           }
         );
+        clearTimeout(timeout);
 
         if (response.ok) {
           const contentType = response.headers.get('content-type');
@@ -162,10 +183,11 @@ const generateImage = async (req, res) => {
     }
 
     if (!imageBuffer) {
+      console.error('All image generation models failed:', lastError);
       return res.status(503).json({
-        message: 'Image generation failed. All models busy. Please try again in 30 seconds.',
-        loading: true,
-        error: lastError
+        message: 'Image generation service temporarily unavailable. Please try again in 1 minute.',
+        status: 'busy',
+        error: lastError.substring(0, 100) // Truncate error message
       });
     }
 

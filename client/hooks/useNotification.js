@@ -31,6 +31,12 @@ const useNotification = () => {
       try {
         const { data } = await axios.get('/notifications/vapid-public-key');
         const publicKey = data.publicKey;
+        
+        // Check if VAPID key is configured
+        if (!publicKey) {
+          console.warn('VAPID_PUBLIC_KEY not configured on server. Push notifications disabled.');
+          return;
+        }
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,

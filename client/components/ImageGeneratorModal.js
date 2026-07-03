@@ -21,6 +21,12 @@ export default function ImageGeneratorModal({ onSend, onClose }) {
       return;
     }
 
+    if (result.error === 'Service unavailable' || result.status === 'busy') {
+      setError('Image generation service is busy. Please try again in 1-2 minutes.');
+      setRetrying(true);
+      return;
+    }
+
     if (result.loading) {
       setError('Model is loading (first time takes ~20 seconds). Please try again!');
       setRetrying(true);
