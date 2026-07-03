@@ -2,34 +2,56 @@ import { create } from 'zustand';
 import axios from '../utils/axios';
 
 const useChatStore = create((set, get) => ({
-  users: [],
+  contacts: [],
+  searchResults: [],
+  searchQuery: '',
   selectedUser: null,
+  selectedGroup: null,
   messages: [],
   groups: [],
-  selectedGroup: null,
   onlineUsers: [],
   typingUsers: [],
   loading: false,
   replyingTo: null,
   pinnedMessages: [],
-  searchResults: [],
-  searchQuery: '',
-  showSearch: false,
+  msgSearchResults: [],
+  msgSearchQuery: '',
+  showMsgSearch: false,
   blockedUsers: [],
   viewingProfile: null,
   wallpapers: {},
+  showAIChat: false,
 
-  getUsers: async () => {
+  // Contacts — sirf jo pehle baat kar chuke
+  getContacts: async () => {
     try {
-      const { data } = await axios.get('/auth/users');
-      set({ users: data });
+      const { data } = await axios.get('/auth/contacts');
+      set({ contacts: data });
     } catch (error) {
       console.error(error);
     }
   },
 
-  setSelectedUser: (user) => set({ selectedUser: user, selectedGroup: null, messages: [], replyingTo: null }),
-  setSelectedGroup: (group) => set({ selectedGroup: group, selectedUser: null, messages: [], replyingTo: null }),
+  // Search users
+  searchUsers: async (query) => {
+    set({ searchQuery: query });
+    if (!query || query.trim().length < 2) {
+      set({ searchResults: [] });
+      return;
+    }
+    try {
+      const { data } = await axios.get(`/auth/search?q=${encodeURIComponent(query)}`);
+      set({ searchResults: data });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+
+  clearSearch: () => set({ searchQuery: '', searchResults: [] }),
+
+  setSelectedUser: (user) => set({ selectedUser: user, selectedGroup: null, messages: [], replyingTo: null, showAIChat: false }),
+  setSelectedGroup: (group) => set({ selectedGroup: group, selectedUser: null, messages: [], replyingTo: null, showAIChat: false }),
+  setShowAIChat: (val) => set({ showAIChat: val, selectedUser: null, selectedGroup: null }),
 
   getMessages: async (userId) => {
     set({ loading: true });
@@ -38,7 +60,6 @@ const useChatStore = create((set, get) => ({
       set({ messages: data, loading: false });
     } catch (error) {
       set({ loading: false });
-      console.error(error);
     }
   },
 
@@ -49,7 +70,6 @@ const useChatStore = create((set, get) => ({
       set({ messages: data, loading: false });
     } catch (error) {
       set({ loading: false });
-      console.error(error);
     }
   },
 
@@ -57,6 +77,7 @@ const useChatStore = create((set, get) => ({
     try {
       const { data } = await axios.post('/messages', messageData);
       set((state) => ({ messages: [...state.messages, data] }));
+      get().getContacts();
     } catch (error) {
       console.error(error);
     }
@@ -67,6 +88,7 @@ const useChatStore = create((set, get) => ({
       if (state.messages.find(m => m._id === message._id)) return state;
       return { messages: [...state.messages, message] };
     });
+    get().getContacts();
   },
 
   updateMessage: (updatedMessage) => {
@@ -89,7 +111,6 @@ const useChatStore = create((set, get) => ({
       get().updateMessage(data);
       return true;
     } catch (error) {
-      console.error(error);
       return false;
     }
   },
@@ -100,7 +121,6 @@ const useChatStore = create((set, get) => ({
       get().removeMessageLocally(messageId);
       return true;
     } catch (error) {
-      console.error(error);
       return false;
     }
   },
@@ -138,39 +158,26 @@ const useChatStore = create((set, get) => ({
   setReplyingTo: (message) => set({ replyingTo: message }),
   clearReplyingTo: () => set({ replyingTo: null }),
 
-  toggleSearch: () => set((state) => ({ showSearch: !state.showSearch, searchQuery: '', searchResults: [] })),
+  toggleMsgSearch: () => set((state) => ({ showMsgSearch: !state.showMsgSearch, msgSearchQuery: '', msgSearchResults: [] })),
 
   searchMessages: async (query) => {
     const { selectedUser, selectedGroup } = get();
-    set({ searchQuery: query });
-    if (!query.trim()) {
-      set({ searchResults: [] });
-      return;
-    }
+    set({ msgSearchQuery: query });
+    if (!query.trim()) { set({ msgSearchResults: [] }); return; }
     try {
       const params = selectedGroup
         ? `query=${encodeURIComponent(query)}&groupId=${selectedGroup._id}`
         : `query=${encodeURIComponent(query)}&userId=${selectedUser?._id}`;
       const { data } = await axios.get(`/messages/search?${params}`);
-      set({ searchResults: data });
+      set({ msgSearchResults: data });
     } catch (error) {
       console.error(error);
     }
   },
 
   setOnlineUsers: (users) => set({ onlineUsers: users }),
-
-  addTypingUser: (userId) => {
-    set((state) => ({
-      typingUsers: [...new Set([...state.typingUsers, userId])]
-    }));
-  },
-
-  removeTypingUser: (userId) => {
-    set((state) => ({
-      typingUsers: state.typingUsers.filter((id) => id !== userId)
-    }));
-  },
+  addTypingUser: (userId) => set((state) => ({ typingUsers: [...new Set([...state.typingUsers, userId])] })),
+  removeTypingUser: (userId) => set((state) => ({ typingUsers: state.typingUsers.filter(id => id !== userId) })),
 
   getGroups: async () => {
     try {
@@ -181,7 +188,6 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  // --- Profile / Block / Report ---
   viewProfile: async (userId) => {
     try {
       const { data } = await axios.get(`/auth/user/${userId}`);
@@ -206,13 +212,12 @@ const useChatStore = create((set, get) => ({
     try {
       await axios.put(`/auth/block/${userId}`);
       set((state) => ({
-        users: state.users.filter(u => u._id !== userId),
+        contacts: state.contacts.filter(u => u._id !== userId),
         selectedUser: state.selectedUser?._id === userId ? null : state.selectedUser,
       }));
       get().getBlockedUsers();
       return true;
     } catch (error) {
-      console.error(error);
       return false;
     }
   },
@@ -221,10 +226,8 @@ const useChatStore = create((set, get) => ({
     try {
       await axios.put(`/auth/unblock/${userId}`);
       get().getBlockedUsers();
-      get().getUsers();
       return true;
     } catch (error) {
-      console.error(error);
       return false;
     }
   },
@@ -234,7 +237,6 @@ const useChatStore = create((set, get) => ({
       await axios.post(`/auth/report/${userId}`, { reason });
       return true;
     } catch (error) {
-      console.error(error);
       return false;
     }
   },

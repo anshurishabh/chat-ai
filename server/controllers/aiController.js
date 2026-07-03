@@ -1,5 +1,4 @@
 const Groq = require('groq-sdk');
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const getSmartReplies = async (req, res) => {
@@ -19,7 +18,6 @@ const getSmartReplies = async (req, res) => {
     const replies = JSON.parse(clean);
     res.json({ replies });
   } catch (error) {
-    console.error('Smart Replies Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -27,23 +25,18 @@ const getSmartReplies = async (req, res) => {
 const chatWithAI = async (req, res) => {
   try {
     const { message, history } = req.body;
-    const historyMessages = history?.map(h => ({
-      role: h.role === 'assistant' ? 'assistant' : 'user',
-      content: h.content
-    })) || [];
+    const historyMessages = history?.map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content })) || [];
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are NexChat AI Assistant — a helpful, friendly, and smart assistant inside a chat application. Keep responses concise and conversational.' },
+        { role: 'system', content: 'You are NexChat AI Assistant — helpful, friendly, smart. Keep responses concise.' },
         ...historyMessages,
         { role: 'user', content: message }
       ],
       max_tokens: 500,
     });
-    const reply = completion.choices[0].message.content;
-    res.json({ reply });
+    res.json({ reply: completion.choices[0].message.content });
   } catch (error) {
-    console.error('Groq Chat Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -54,15 +47,13 @@ const translateMessage = async (req, res) => {
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are a translator. Return ONLY the translated text, nothing else.' },
+        { role: 'system', content: 'You are a translator. Return ONLY the translated text.' },
         { role: 'user', content: `Translate to ${targetLanguage}: ${text}` }
       ],
       max_tokens: 200,
     });
-    const translated = completion.choices[0].message.content.trim();
-    res.json({ translated });
+    res.json({ translated: completion.choices[0].message.content.trim() });
   } catch (error) {
-    console.error('Translate Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -73,16 +64,14 @@ const detectSentiment = async (req, res) => {
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are a sentiment analyzer. Return ONLY a JSON object like: {"sentiment": "positive", "emotion": "happy", "emoji": "😊"}' },
+        { role: 'system', content: 'Sentiment analyzer. Return ONLY JSON: {"sentiment":"positive/negative/neutral","emotion":"happy/sad/angry/excited/neutral","emoji":"😊"}' },
         { role: 'user', content: `Analyze: ${text}` }
       ],
       max_tokens: 100,
     });
     const raw = completion.choices[0].message.content.replace(/```json|```/g, '').trim();
-    const data = JSON.parse(raw);
-    res.json(data);
+    res.json(JSON.parse(raw));
   } catch (error) {
-    console.error('Sentiment Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -94,15 +83,13 @@ const summarizeChat = async (req, res) => {
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are a chat summarizer. Summarize in 3-4 concise lines.' },
-        { role: 'user', content: `Summarize this chat:\n${chatText}` }
+        { role: 'system', content: 'Chat summarizer. Summarize in 3-4 concise lines.' },
+        { role: 'user', content: `Summarize:\n${chatText}` }
       ],
       max_tokens: 200,
     });
-    const summary = completion.choices[0].message.content.trim();
-    res.json({ summary });
+    res.json({ summary: completion.choices[0].message.content.trim() });
   } catch (error) {
-    console.error('Summary Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -113,63 +100,77 @@ const correctGrammar = async (req, res) => {
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are a grammar corrector. Return ONLY the corrected text, nothing else.' },
-        { role: 'user', content: `Correct grammar: ${text}` }
+        { role: 'system', content: 'Grammar corrector. Return ONLY corrected text.' },
+        { role: 'user', content: `Correct: ${text}` }
       ],
       max_tokens: 200,
     });
-    const corrected = completion.choices[0].message.content.trim();
-    res.json({ corrected });
+    res.json({ corrected: completion.choices[0].message.content.trim() });
   } catch (error) {
-    console.error('Grammar Error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
 
-// AI Image Generation using Hugging Face
+// HuggingFace Image Generation — Fixed with better model
 const generateImage = async (req, res) => {
   try {
     const { prompt } = req.body;
+    if (!prompt?.trim()) return res.status(400).json({ message: 'Prompt is required' });
 
-    if (!prompt || prompt.trim().length === 0) {
-      return res.status(400).json({ message: 'Prompt is required' });
-    }
+    // Multiple models try karo — agar ek fail ho to doosra
+    const models = [
+      'black-forest-labs/FLUX.1-schnell',
+      'stabilityai/stable-diffusion-xl-base-1.0',
+      'runwayml/stable-diffusion-v1-5'
+    ];
 
-    console.log('Generating image for prompt:', prompt);
+    let imageBuffer = null;
+    let lastError = '';
 
-    const response = await fetch(
-      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            num_inference_steps: 20,
-            guidance_scale: 7.5,
-            width: 512,
-            height: 512,
+    for (const model of models) {
+      try {
+        const response = await fetch(
+          `https://api-inference.huggingface.co/models/${model}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+              'Content-Type': 'application/json',
+              'x-wait-for-model': 'true'
+            },
+            body: JSON.stringify({
+              inputs: prompt,
+              parameters: { num_inference_steps: 25, guidance_scale: 7.5 }
+            }),
           }
-        }),
-      }
-    );
+        );
 
-    if (!response.ok) {
-      const error = await response.text();
-      // Model loading hota hai pehli baar — retry karo
-      if (response.status === 503) {
-        return res.status(503).json({ message: 'Model is loading, please try again in 20 seconds', loading: true });
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('image')) {
+            imageBuffer = await response.arrayBuffer();
+            break;
+          }
+        } else {
+          lastError = await response.text();
+          console.log(`Model ${model} failed:`, lastError);
+        }
+      } catch (err) {
+        lastError = err.message;
+        console.log(`Model ${model} error:`, err.message);
       }
-      throw new Error(`HuggingFace error: ${error}`);
     }
 
-    const imageBuffer = await response.arrayBuffer();
+    if (!imageBuffer) {
+      return res.status(503).json({
+        message: 'Image generation failed. All models busy. Please try again in 30 seconds.',
+        loading: true,
+        error: lastError
+      });
+    }
+
     const base64Image = Buffer.from(imageBuffer).toString('base64');
     const imageUrl = `data:image/png;base64,${base64Image}`;
-
     res.json({ imageUrl, prompt });
   } catch (error) {
     console.error('Image Generation Error:', error.message);
@@ -177,12 +178,4 @@ const generateImage = async (req, res) => {
   }
 };
 
-module.exports = {
-  getSmartReplies,
-  chatWithAI,
-  translateMessage,
-  detectSentiment,
-  summarizeChat,
-  correctGrammar,
-  generateImage
-};
+module.exports = { getSmartReplies, chatWithAI, translateMessage, detectSentiment, summarizeChat, correctGrammar, generateImage };
