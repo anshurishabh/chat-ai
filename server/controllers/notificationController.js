@@ -11,7 +11,9 @@ const subscriptions = new Map();
 const saveSubscription = async (req, res) => {
   try {
     const { subscription, userId } = req.body;
-    subscriptions.set(userId, subscription);
+    if (userId && subscription) {
+      subscriptions.set(userId, subscription);
+    }
     res.json({ message: 'Subscription saved' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -24,6 +26,9 @@ const sendNotification = async (userId, payload) => {
     if (!subscription) return;
     await webpush.sendNotification(subscription, JSON.stringify(payload));
   } catch (error) {
+    if (error.statusCode === 410) {
+      subscriptions.delete(userId);
+    }
     console.error('Push notification error:', error.message);
   }
 };

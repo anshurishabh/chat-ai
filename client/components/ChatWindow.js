@@ -4,7 +4,6 @@ import useChatStore from '../store/useChatStore';
 import useAuthStore from '../store/useAuthStore';
 import useAIStore from '../store/useAIStore';
 import useSocket from '../hooks/useSocket';
-import AIAssistant from './AIAssistant';
 import FileUpload from './FileUpload';
 import VoiceRecorder from './VoiceRecorder';
 import VideoCall from './VideoCall';
@@ -15,14 +14,14 @@ import WallpaperPicker from './WallpaperPicker';
 import ConfirmModal from './ConfirmModal';
 import ImageGeneratorModal from './ImageGeneratorModal';
 
-export default function ChatWindow() {
+export default function ChatWindow({ onBack }) {
   const { user } = useAuthStore();
   const {
     selectedUser, selectedGroup, messages, getMessages, getGroupMessages,
     typingUsers, loading, onlineUsers,
     replyingTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
-    showSearch, toggleSearch, searchQuery, searchResults, searchMessages,
+    showMsgSearch, toggleMsgSearch, msgSearchQuery, msgSearchResults, searchMessages,
     viewProfile, viewingProfile, closeProfile,
     blockUser,
   } = useChatStore();
@@ -30,7 +29,6 @@ export default function ChatWindow() {
   const { smartReplies, clearSmartReplies, translateMessage, summarizeChat, correctGrammar } = useAIStore();
 
   const [input, setInput] = useState('');
-  const [showAI, setShowAI] = useState(false);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showTranslate, setShowTranslate] = useState(false);
@@ -70,8 +68,8 @@ export default function ChatWindow() {
     setShowSummary(false);
     setShowPinnedBar(false);
     setShowHeaderMenu(false);
-    const savedWallpaper = user?.wallpapers?.[chatId] || '';
-    setWallpaper(savedWallpaper);
+    setInput('');
+    setShowImagineHint(false);
   }, [selectedUser, selectedGroup]);
 
   useEffect(() => {
@@ -82,17 +80,10 @@ export default function ChatWindow() {
     const content = text || input;
     if (!content.trim()) return;
 
-    // /imagine command detect karo
-    if (content.trim().startsWith('/imagine ')) {
+    if (content.trim().startsWith('/imagine')) {
       setInput('');
       setShowImageGenerator(true);
-      const promptFromCommand = content.trim().replace('/imagine ', '');
-      if (promptFromCommand) {
-        setTimeout(() => {
-          const promptInput = document.querySelector('#imagine-prompt');
-          if (promptInput) promptInput.value = promptFromCommand;
-        }, 300);
-      }
+      setShowImagineHint(false);
       return;
     }
 
@@ -115,7 +106,7 @@ export default function ChatWindow() {
   const handleImageSend = (imageData) => {
     const messageData = {
       sender: user._id,
-      content: `🎨 AI Generated: ${imageData.prompt}`,
+      content: `🎨 ${imageData.prompt}`,
       type: 'image',
       fileUrl: imageData.imageUrl,
       receiver: selectedUser?._id || null,
@@ -141,13 +132,7 @@ export default function ChatWindow() {
   const handleTyping = (e) => {
     const value = e.target.value;
     setInput(value);
-
-    // /imagine hint dikhao
-    if (value === '/imagine' || value.startsWith('/imagine ')) {
-      setShowImagineHint(true);
-    } else {
-      setShowImagineHint(false);
-    }
+    setShowImagineHint(value.startsWith('/imagine') || value === '/ima');
 
     if (selectedUser) {
       sendTyping({ sender: user._id, receiver: selectedUser._id });
@@ -159,16 +144,8 @@ export default function ChatWindow() {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
     if (e.key === 'Escape' && replyingTo) clearReplyingTo();
-  };
-
-  const handleEmojiSelect = (emoji) => {
-    setInput((prev) => prev + emoji);
-    setShowEmojiPicker(false);
   };
 
   const handleTranslate = async () => {
@@ -189,127 +166,81 @@ export default function ChatWindow() {
     setShowSummary(true);
   };
 
-  const startVideoCall = () => { if (!selectedUser) return; setActiveCall({ type: 'video', isIncoming: false }); };
-  const startVoiceCall = () => { if (!selectedUser) return; setActiveCall({ type: 'voice', isIncoming: false }); };
-
   const scrollToMessage = (messageId) => {
     const el = messageRefs.current[messageId];
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-green-400');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500);
+      el.classList.add('ring-2', 'ring-purple-400');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-purple-400'), 1500);
     }
   };
-
-  const handleViewProfile = () => {
-    setShowHeaderMenu(false);
-    if (selectedUser) viewProfile(selectedUser._id);
-  };
-
-  const handleBlockFromHeader = async () => {
-    await blockUser(selectedUser._id);
-    setShowBlockConfirm(false);
-  };
-
-  if (!selectedUser && !selectedGroup) {
-    return (
-      <div className="flex-1 h-screen bg-gray-950 flex flex-col items-center justify-center">
-        <div className="text-8xl mb-6 animate-bounce">💬</div>
-        <h2 className="text-white text-3xl font-bold mb-3">Welcome to NexChat</h2>
-        <p className="text-gray-400 mb-2">Select a user or group to start chatting</p>
-        <p className="text-gray-600 text-sm mb-8">Type <span className="text-green-400 font-mono">/imagine</span> in chat to generate AI images</p>
-        <button
-          onClick={() => setShowAI(true)}
-          className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-400 hover:to-blue-400 text-black font-bold px-8 py-4 rounded-full transition-all transform hover:scale-105"
-        >
-          🤖 Chat with AI Assistant
-        </button>
-        {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
-      </div>
-    );
-  }
 
   const chatName = selectedUser?.name || selectedGroup?.name;
   const isGroup = !!selectedGroup;
 
   return (
     <div
-      className="flex-1 h-screen flex flex-col relative"
-      style={{ background: wallpaper || '#030712' }}
+      className="flex-1 h-full flex flex-col relative overflow-hidden"
+      style={wallpaper ? { background: wallpaper } : { background: 'linear-gradient(180deg, #0f0f1a 0%, #0a0a14 100%)' }}
     >
-      {/* Chat Header */}
-      <div className="p-4 border-b border-gray-800 bg-gray-900/95 backdrop-blur flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={handleViewProfile}>
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
-            {selectedUser?.avatar ? (
-              <img src={selectedUser.avatar} alt="avatar" className="w-full h-full object-cover" />
-            ) : (
-              chatName?.charAt(0).toUpperCase()
-            )}
+      {/* Header */}
+      <div className="px-4 pt-12 pb-3 bg-gradient-to-b from-[#1a0a2e]/95 to-transparent backdrop-blur-md flex items-center gap-3 relative z-10">
+
+        {/* Back button — always visible */}
+        <button
+          onClick={onBack}
+          className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors flex-shrink-0"
+        >
+          ←
+        </button>
+
+        <div
+          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+          onClick={() => selectedUser && viewProfile(selectedUser._id)}
+        >
+          <div className="w-10 h-10 rounded-2xl overflow-hidden flex-shrink-0">
+            {selectedUser?.avatar
+              ? <img src={selectedUser.avatar} alt="avatar" className="w-full h-full object-cover" />
+              : (
+                <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold">
+                  {chatName?.charAt(0).toUpperCase()}
+                </div>
+              )
+            }
           </div>
-          <div>
-            <p className="text-white font-semibold">{chatName}</p>
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm truncate">{chatName}</p>
             {typingUsers.length > 0 ? (
-              <p className="text-green-400 text-xs animate-pulse">✍️ typing...</p>
+              <p className="text-green-400 text-xs animate-pulse">typing...</p>
             ) : (
-              <p className="text-gray-400 text-xs">
+              <p className="text-white/40 text-xs">
                 {selectedUser
-                  ? (onlineUsers?.includes(selectedUser._id) ? '🟢 Online' : '⚫ Offline')
-                  : `👥 ${selectedGroup?.members?.length} members`}
+                  ? (onlineUsers?.includes(selectedUser._id) ? '🟢 online' : 'offline')
+                  : `${selectedGroup?.members?.length} members`}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap relative">
+        {/* Header actions */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           {selectedUser && (
             <>
-              <button onClick={startVoiceCall} className="w-9 h-9 bg-gray-800 hover:bg-green-500 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all" title="Voice Call">📞</button>
-              <button onClick={startVideoCall} className="w-9 h-9 bg-gray-800 hover:bg-blue-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all" title="Video Call">📹</button>
+              <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors">📞</button>
+              <button onClick={() => setActiveCall({ type: 'video', isIncoming: false })} className="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors">📹</button>
             </>
           )}
-          <button
-            onClick={() => setShowImageGenerator(true)}
-            className="w-9 h-9 bg-gray-800 hover:bg-purple-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-all"
-            title="Generate AI Image"
-          >
-            🎨
-          </button>
-          <button
-            onClick={toggleSearch}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${showSearch ? 'bg-green-500 text-black' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}
-            title="Search messages"
-          >
-            🔍
-          </button>
-          <button
-            onClick={() => setShowPinnedBar(!showPinnedBar)}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all relative ${showPinnedBar ? 'bg-yellow-500 text-black' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}
-            title="Pinned messages"
-          >
-            📌
-            {pinnedMessages.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">
-                {pinnedMessages.length}
-              </span>
-            )}
-          </button>
-          <button onClick={handleSummarize} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">📝 Summary</button>
-          <button onClick={() => setShowAI(!showAI)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-3 py-1 rounded-full transition-colors">🤖 AI</button>
-
-          {/* 3-dot menu */}
           <div className="relative">
-            <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="w-9 h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400">⋮</button>
+            <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 text-xl transition-colors">⋮</button>
             {showHeaderMenu && (
-              <div className="absolute right-0 top-11 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-30 overflow-hidden">
-                {selectedUser && (
-                  <button onClick={handleViewProfile} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">👤 View Profile</button>
-                )}
-                <button onClick={() => { setShowWallpaperPicker(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">🎨 Change Wallpaper</button>
-                <button onClick={() => { setShowImageGenerator(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-purple-400 hover:bg-gray-700">🖼️ AI Image Generator</button>
-                {selectedUser && (
-                  <button onClick={() => { setShowBlockConfirm(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700">🚫 Block User</button>
-                )}
+              <div className="absolute right-0 top-11 w-52 bg-[#1e1e30] border border-white/10 rounded-2xl shadow-2xl z-30 overflow-hidden">
+                {selectedUser && <button onClick={() => { viewProfile(selectedUser._id); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5">👤 View Profile</button>}
+                <button onClick={() => { setShowWallpaperPicker(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5">🎨 Wallpaper</button>
+                <button onClick={() => { setShowImageGenerator(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-purple-400 hover:bg-white/5">🖼️ AI Image</button>
+                <button onClick={() => { handleSummarize(); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5">📝 Summary</button>
+                <button onClick={() => { toggleMsgSearch(); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5">🔍 Search</button>
+                <button onClick={() => { setShowPinnedBar(!showPinnedBar); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-yellow-400 hover:bg-white/5">📌 Pinned</button>
+                {selectedUser && <button onClick={() => { setShowBlockConfirm(true); setShowHeaderMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-white/5">🚫 Block</button>}
               </div>
             )}
           </div>
@@ -317,21 +248,20 @@ export default function ChatWindow() {
       </div>
 
       {/* Search bar */}
-      {showSearch && (
-        <div className="bg-gray-900/95 backdrop-blur border-b border-gray-800 p-3">
+      {showMsgSearch && (
+        <div className="px-4 py-2 bg-[#1a0a2e]/80 backdrop-blur border-b border-white/10">
           <input
             autoFocus
-            value={searchQuery}
+            value={msgSearchQuery}
             onChange={(e) => searchMessages(e.target.value)}
-            placeholder="Search in this conversation..."
-            className="w-full bg-gray-800 text-white px-4 py-2 rounded-full border border-gray-700 focus:outline-none focus:border-green-400 text-sm"
+            placeholder="Search messages..."
+            className="w-full bg-white/10 text-white px-4 py-2 rounded-full border border-white/20 focus:border-purple-400 text-sm focus:outline-none"
           />
-          {searchQuery && (
-            <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
-              {searchResults.length === 0 && <p className="text-gray-500 text-xs px-2">No messages found</p>}
-              {searchResults.map((m) => (
-                <div key={m._id} onClick={() => { scrollToMessage(m._id); toggleSearch(); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer">
-                  <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
+          {msgSearchQuery && msgSearchResults.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+              {msgSearchResults.map((m) => (
+                <div key={m._id} onClick={() => { scrollToMessage(m._id); toggleMsgSearch(); }} className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer">
+                  <p className="text-purple-400 text-xs font-semibold">{m.sender?.name}</p>
                   <p className="text-white text-xs truncate">{m.content}</p>
                 </div>
               ))}
@@ -340,67 +270,57 @@ export default function ChatWindow() {
         </div>
       )}
 
-      {/* Pinned messages bar */}
-      {showPinnedBar && (
-        <div className="bg-gray-900/95 backdrop-blur border-b border-gray-800 p-3 max-h-40 overflow-y-auto">
-          <p className="text-yellow-400 text-xs font-semibold mb-2">📌 Pinned Messages</p>
-          {pinnedMessages.length === 0 && <p className="text-gray-500 text-xs">No pinned messages yet</p>}
-          {pinnedMessages.map((m) => (
-            <div key={m._id} onClick={() => { scrollToMessage(m._id); setShowPinnedBar(false); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg cursor-pointer mb-1">
-              <p className="text-green-400 text-xs font-semibold">{m.sender?.name}</p>
-              <p className="text-white text-xs truncate">{m.type === 'text' ? m.content : '📎 Attachment'}</p>
+      {/* Pinned bar */}
+      {showPinnedBar && pinnedMessages.length > 0 && (
+        <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 backdrop-blur">
+          <p className="text-yellow-400 text-xs font-semibold mb-1">📌 Pinned</p>
+          {pinnedMessages.slice(0, 3).map((m) => (
+            <div key={m._id} onClick={() => scrollToMessage(m._id)} className="text-white/70 text-xs truncate cursor-pointer hover:text-white py-0.5">
+              {m.sender?.name}: {m.content}
             </div>
           ))}
         </div>
       )}
 
-      {/* Summary Modal */}
+      {/* Summary */}
       {showSummary && summary && (
-        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 w-96 bg-gray-800 border border-green-500 rounded-xl p-4 z-40 shadow-2xl">
-          <div className="flex justify-between items-center mb-3">
-            <p className="text-green-400 font-semibold text-sm">📝 Chat Summary</p>
-            <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-white">✕</button>
+        <div className="absolute top-24 left-4 right-4 bg-[#1e1e30]/95 border border-purple-500/30 rounded-2xl p-4 z-40 shadow-2xl backdrop-blur">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-purple-400 font-semibold text-sm">📝 Summary</p>
+            <button onClick={() => setShowSummary(false)} className="text-white/40 hover:text-white">✕</button>
           </div>
           <p className="text-white text-sm leading-relaxed">{summary}</p>
         </div>
       )}
 
-      {/* Incoming Call Banner */}
+      {/* Incoming call */}
       {incomingCall && !activeCall && (
-        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 w-96 bg-gray-800 border border-green-500 rounded-xl p-4 z-40 shadow-2xl">
+        <div className="absolute top-24 left-4 right-4 bg-[#1e1e30]/95 border border-green-500/30 rounded-2xl p-4 z-40 shadow-2xl backdrop-blur">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold animate-pulse">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl animate-pulse">
                 {incomingCall.callerName?.charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="text-white font-semibold text-sm">{incomingCall.callerName}</p>
-                <p className="text-gray-400 text-xs">Incoming {incomingCall.isVoiceOnly ? 'voice' : 'video'} call...</p>
+                <p className="text-white font-semibold">{incomingCall.callerName}</p>
+                <p className="text-white/40 text-xs">Incoming {incomingCall.isVoiceOnly ? 'voice' : 'video'} call...</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setIncomingCall(null)} className="w-10 h-10 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-xl">📵</button>
-              <button
-                onClick={() => {
-                  setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal });
-                  setIncomingCall(null);
-                }}
-                className="w-10 h-10 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center text-xl animate-bounce"
-              >
-                📞
-              </button>
+              <button onClick={() => setIncomingCall(null)} className="w-12 h-12 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-2xl">📵</button>
+              <button onClick={() => { setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal }); setIncomingCall(null); }} className="w-12 h-12 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center text-2xl animate-bounce">📞</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {loading && <div className="text-center text-gray-400 text-sm">Loading messages...</div>}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        {loading && <div className="text-center text-white/30 text-sm py-4">Loading...</div>}
         {messages.map((msg) => {
           const isMe = msg.sender._id === user._id || msg.sender === user._id;
           return (
-            <div key={msg._id} ref={(el) => { messageRefs.current[msg._id] = el; }} className="rounded-2xl transition-all">
+            <div key={msg._id} ref={(el) => { messageRefs.current[msg._id] = el; }}>
               <MessageBubble msg={msg} isMe={isMe} isGroup={isGroup} onScrollToMessage={scrollToMessage} />
             </div>
           );
@@ -408,99 +328,96 @@ export default function ChatWindow() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Smart Replies */}
+      {/* Smart replies */}
       {smartReplies.length > 0 && (
-        <div className="px-4 py-2 flex gap-2 overflow-x-auto border-t border-gray-800">
+        <div className="px-4 pb-2 flex gap-2 overflow-x-auto">
           {smartReplies.map((reply, i) => (
-            <button key={i} onClick={() => handleSend(reply)} className="whitespace-nowrap bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-full border border-gray-600 hover:border-green-400 transition-colors">
+            <button key={i} onClick={() => handleSend(reply)} className="whitespace-nowrap bg-white/10 hover:bg-purple-500/30 text-white text-xs px-3 py-2 rounded-full border border-white/20 hover:border-purple-400 transition-all flex-shrink-0">
               {reply}
             </button>
           ))}
         </div>
       )}
 
-      {/* Translate Preview */}
+      {/* Translate preview */}
       {translatedMsg && (
-        <div className="px-4 py-2 bg-gray-800 border-t border-gray-700">
-          <p className="text-green-400 text-xs mb-1">🌍 Translation ({translateLang}):</p>
+        <div className="mx-4 mb-2 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+          <p className="text-purple-400 text-xs mb-1">🌍 {translateLang}:</p>
           <p className="text-white text-sm">{translatedMsg}</p>
-          <button onClick={() => { setInput(translatedMsg); setTranslatedMsg(''); }} className="text-green-400 text-xs mt-1 hover:underline">Use this ↑</button>
+          <button onClick={() => { setInput(translatedMsg); setTranslatedMsg(''); }} className="text-purple-400 text-xs mt-1 hover:underline">Use this ↑</button>
         </div>
       )}
 
-      {/* Reply preview bar */}
+      {/* Reply bar */}
       {replyingTo && (
-        <div className="px-4 pt-3 bg-gray-900/95 border-t border-gray-800 flex items-center justify-between">
-          <div className="flex-1 min-w-0 border-l-2 border-green-400 pl-3 py-1">
-            <p className="text-green-400 text-xs font-semibold">Replying to {replyingTo.sender?.name}</p>
-            <p className="text-gray-400 text-xs truncate">{replyingTo.type === 'text' ? replyingTo.content : '📎 Attachment'}</p>
+        <div className="mx-4 mb-2 bg-white/5 border-l-2 border-purple-400 rounded-r-2xl px-4 py-2 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-purple-400 text-xs font-semibold">Replying to {replyingTo.sender?.name}</p>
+            <p className="text-white/50 text-xs truncate">{replyingTo.content}</p>
           </div>
-          <button onClick={clearReplyingTo} className="text-gray-400 hover:text-white px-3">✕</button>
+          <button onClick={clearReplyingTo} className="text-white/30 hover:text-white px-2">✕</button>
         </div>
       )}
 
       {/* /imagine hint */}
       {showImagineHint && (
-        <div className="px-4 pb-2 bg-gray-900/95">
-          <div
-            onClick={() => { handleSend(); }}
-            className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 border border-purple-500/40 rounded-xl px-4 py-2 cursor-pointer transition-colors"
-          >
+        <div className="mx-4 mb-2">
+          <div onClick={() => { setShowImageGenerator(true); setInput(''); setShowImagineHint(false); }} className="flex items-center gap-3 bg-purple-500/20 border border-purple-500/40 rounded-2xl px-4 py-3 cursor-pointer hover:bg-purple-500/30 transition-colors">
             <span className="text-2xl">🎨</span>
             <div>
-              <p className="text-purple-400 text-xs font-semibold">AI Image Generator</p>
-              <p className="text-gray-400 text-xs">Press Enter to open with your prompt</p>
+              <p className="text-purple-300 text-sm font-semibold">AI Image Generator</p>
+              <p className="text-white/40 text-xs">Tap to open and create an AI image</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Input Area */}
-      <div className="p-4 border-t border-gray-800 bg-gray-900/95 backdrop-blur relative">
-        <div className="flex gap-2 mb-3 flex-wrap">
-          <button onClick={handleGrammar} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">✨ Fix Grammar</button>
-          <button onClick={() => setShowTranslate(!showTranslate)} className="text-gray-400 hover:text-green-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors">🌍 Translate</button>
+      {/* Input area */}
+      <div className="px-4 pb-8 pt-2 bg-gradient-to-t from-[#0f0f1a] to-transparent">
+        {/* AI tools row */}
+        <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
+          <button onClick={handleGrammar} className="text-white/40 hover:text-white text-xs border border-white/10 hover:border-purple-400 px-3 py-1 rounded-full transition-all whitespace-nowrap flex-shrink-0">✨ Grammar</button>
+          <button onClick={() => setShowTranslate(!showTranslate)} className="text-white/40 hover:text-white text-xs border border-white/10 hover:border-purple-400 px-3 py-1 rounded-full transition-all whitespace-nowrap flex-shrink-0">🌍 Translate</button>
+          <button onClick={() => setShowImageGenerator(true)} className="text-purple-400 hover:text-purple-300 text-xs border border-purple-500/30 hover:border-purple-400 px-3 py-1 rounded-full transition-all whitespace-nowrap flex-shrink-0">🎨 /imagine</button>
           {showTranslate && (
             <>
-              <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} className="bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600">
+              <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} className="bg-[#1e1e30] text-white text-xs px-2 py-1 rounded-full border border-white/20 flex-shrink-0">
                 <option>Hindi</option><option>Spanish</option><option>French</option>
                 <option>German</option><option>Japanese</option><option>Arabic</option><option>English</option>
               </select>
-              <button onClick={handleTranslate} className="bg-green-500 text-black text-xs px-2 py-1 rounded font-bold">Go</button>
+              <button onClick={handleTranslate} className="bg-purple-500 text-white text-xs px-3 py-1 rounded-full font-bold flex-shrink-0">Go</button>
             </>
           )}
-          <button
-            onClick={() => setShowImageGenerator(true)}
-            className="text-gray-400 hover:text-purple-400 text-xs border border-gray-700 px-2 py-1 rounded-full transition-colors"
-          >
-            🎨 /imagine
-          </button>
         </div>
 
+        {/* Emoji picker */}
         {showEmojiPicker && (
-          <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmojiPicker(false)} />
+          <div className="relative">
+            <EmojiPicker onSelect={(emoji) => { setInput(p => p + emoji); setShowEmojiPicker(false); }} onClose={() => setShowEmojiPicker(false)} />
+          </div>
         )}
 
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-yellow-400 transition-colors flex-shrink-0 text-lg">
-            😊
-          </button>
-          <button onClick={() => setShowFileUpload(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">
-            📎
-          </button>
-          <button onClick={() => setShowVoiceRecorder(true)} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-green-400 transition-colors flex-shrink-0">
-            🎤
-          </button>
-          <input
-            type="text"
-            value={input}
-            onChange={handleTyping}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message or /imagine ..."
-            className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-full border border-gray-700 focus:outline-none focus:border-green-400 text-sm transition-colors"
-          />
-          <button onClick={() => handleSend()} className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 rounded-full flex items-center justify-center transition-all transform hover:scale-105 flex-shrink-0">
-            <span className="text-black font-bold text-lg">➤</span>
+        {/* Main input */}
+        <div className="flex items-end gap-2">
+          <div className="flex-1 bg-white/5 border border-white/10 focus-within:border-purple-400/50 rounded-3xl px-4 py-3 flex items-end gap-2 transition-colors">
+            <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-white/30 hover:text-yellow-400 text-xl transition-colors flex-shrink-0 pb-0.5">😊</button>
+            <textarea
+              value={input}
+              onChange={handleTyping}
+              onKeyDown={handleKeyDown}
+              placeholder="Message..."
+              rows={1}
+              style={{ resize: 'none', maxHeight: '120px' }}
+              className="flex-1 bg-transparent text-white text-sm placeholder-white/30 focus:outline-none leading-relaxed"
+            />
+            <button onClick={() => setShowFileUpload(true)} className="text-white/30 hover:text-purple-400 text-xl transition-colors flex-shrink-0 pb-0.5">📎</button>
+            <button onClick={() => setShowVoiceRecorder(true)} className="text-white/30 hover:text-purple-400 text-xl transition-colors flex-shrink-0 pb-0.5">🎤</button>
+          </div>
+          <button
+            onClick={() => handleSend()}
+            className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 rounded-full flex items-center justify-center transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-purple-500/30 flex-shrink-0"
+          >
+            <span className="text-white font-bold">➤</span>
           </button>
         </div>
       </div>
@@ -508,7 +425,6 @@ export default function ChatWindow() {
       {/* Modals */}
       {showFileUpload && <FileUpload onUpload={handleFileUpload} onClose={() => setShowFileUpload(false)} />}
       {showVoiceRecorder && <VoiceRecorder onUpload={handleFileUpload} onClose={() => setShowVoiceRecorder(false)} />}
-      {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
       {viewingProfile && <ProfileModal viewingUser={viewingProfile} onClose={closeProfile} />}
       {showWallpaperPicker && (
         <WallpaperPicker
@@ -518,19 +434,14 @@ export default function ChatWindow() {
           onClose={() => setShowWallpaperPicker(false)}
         />
       )}
-      {showImageGenerator && (
-        <ImageGeneratorModal
-          onSend={handleImageSend}
-          onClose={() => setShowImageGenerator(false)}
-        />
-      )}
+      {showImageGenerator && <ImageGeneratorModal onSend={handleImageSend} onClose={() => setShowImageGenerator(false)} />}
       {showBlockConfirm && (
         <ConfirmModal
           title={`Block ${selectedUser?.name}?`}
           message="They won't be able to message you anymore."
           confirmText="Block"
           danger
-          onConfirm={handleBlockFromHeader}
+          onConfirm={async () => { await blockUser(selectedUser._id); setShowBlockConfirm(false); }}
           onCancel={() => setShowBlockConfirm(false)}
         />
       )}

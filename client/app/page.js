@@ -10,38 +10,65 @@ import useChatStore from '../store/useChatStore';
 
 export default function Home() {
   const { user } = useAuthStore();
-  const { selectedUser, selectedGroup, showAIChat } = useChatStore();
+  const { selectedUser, selectedGroup, showAIChat, setShowAIChat } = useChatStore();
   const [mounted, setMounted] = useState(false);
+  const [showChat, setShowChat] = useState(false); // Mobile: show chat panel
 
   useNotification();
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Jab bhi user/group/AI select ho, mobile pe chat panel kholo
+  useEffect(() => {
+    if (selectedUser || selectedGroup || showAIChat) {
+      setShowChat(true);
+    }
+  }, [selectedUser, selectedGroup, showAIChat]);
+
   if (!mounted) return null;
   if (!user) return <AuthForm />;
 
-  const showRight = selectedUser || selectedGroup || showAIChat;
+  const handleBack = () => {
+    setShowChat(false);
+    setShowAIChat(false);
+  };
+
+  const hasSelection = selectedUser || selectedGroup || showAIChat;
 
   return (
-    <div className="flex h-screen bg-[#111b21] overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex">
-        {!showRight ? (
-          // Welcome screen
-          <div className="flex-1 h-screen bg-[#222e35] flex flex-col items-center justify-center gap-4">
-            <div className="text-7xl">💬</div>
-            <h2 className="text-white text-2xl font-light">NexChat</h2>
-            <p className="text-[#8696a0] text-sm text-center max-w-xs">
-              Send and receive messages, make calls, and use AI features.
-              Select a chat from the left or search for someone.
-            </p>
-            <p className="text-[#8696a0] text-xs mt-2">
-              Type <span className="text-green-400 font-mono">/imagine</span> in any chat to generate AI images
+    <div className="h-screen w-screen overflow-hidden bg-[#0f0f1a] flex">
+
+      {/* Desktop: dono side by side */}
+      {/* Mobile: sirf ek dikhao */}
+
+      {/* Sidebar */}
+      <div className={`
+        ${showChat ? 'hidden' : 'flex'} flex-col
+        md:flex md:w-[360px] md:flex-shrink-0
+        w-full h-full
+      `}>
+        <Sidebar onSelectChat={() => setShowChat(true)} />
+      </div>
+
+      {/* Chat / AI area */}
+      <div className={`
+        ${showChat ? 'flex' : 'hidden'} flex-1 flex-col
+        md:flex
+        h-full
+      `}>
+        {!hasSelection ? (
+          // Desktop welcome screen
+          <div className="flex-1 h-full flex flex-col items-center justify-center bg-[#0a0a14] gap-4">
+            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center text-5xl">💬</div>
+            <h2 className="text-white text-2xl font-bold">NexChat</h2>
+            <p className="text-white/40 text-sm text-center max-w-xs px-4">
+              Search for someone to start chatting, or tap 🤖 to chat with AI
             </p>
           </div>
         ) : showAIChat ? (
-          <AIAssistant />
+          <AIAssistant onBack={handleBack} />
         ) : (
-          <ChatWindow />
+          <ChatWindow onBack={handleBack} />
         )}
       </div>
     </div>
