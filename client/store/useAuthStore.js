@@ -10,13 +10,14 @@ const useAuthStore = create((set, get) => ({
   user: getUser(),
   loading: false,
   error: null,
+  theme: getUser()?.theme || 'dark',
 
   register: async (name, email, password) => {
     set({ loading: true, error: null });
     try {
       const { data } = await axios.post('/auth/register', { name, email, password });
       localStorage.setItem('nexchat-user', JSON.stringify(data));
-      set({ user: data, loading: false });
+      set({ user: data, loading: false, theme: data.theme || 'dark' });
       return true;
     } catch (error) {
       set({ error: error.response?.data?.message || 'Error', loading: false });
@@ -29,7 +30,7 @@ const useAuthStore = create((set, get) => ({
     try {
       const { data } = await axios.post('/auth/login', { email, password });
       localStorage.setItem('nexchat-user', JSON.stringify(data));
-      set({ user: data, loading: false });
+      set({ user: data, loading: false, theme: data.theme || 'dark' });
       return true;
     } catch (error) {
       set({ error: error.response?.data?.message || 'Error', loading: false });
@@ -39,7 +40,7 @@ const useAuthStore = create((set, get) => ({
 
   logout: () => {
     localStorage.removeItem('nexchat-user');
-    set({ user: null });
+    set({ user: null, theme: 'dark' });
   },
 
   updateProfile: async (updates) => {
@@ -48,7 +49,7 @@ const useAuthStore = create((set, get) => ({
       set((state) => {
         const merged = { ...state.user, ...data };
         localStorage.setItem('nexchat-user', JSON.stringify(merged));
-        return { user: merged };
+        return { user: merged, theme: merged.theme || state.theme };
       });
       return true;
     } catch (error) {
@@ -57,8 +58,13 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  setTheme: (theme) => {
-    get().updateProfile({ theme });
+  toggleTheme: async () => {
+    const { user, theme } = get();
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    set({ theme: newTheme });
+    if (user) {
+      await get().updateProfile({ theme: newTheme });
+    }
   },
 }));
 
