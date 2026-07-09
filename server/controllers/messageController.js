@@ -1,3 +1,4 @@
+
 const Message = require('../models/Message');
 const User = require('../models/User');
 
@@ -22,11 +23,10 @@ const sendMessage = async (req, res) => {
       isSent: !isScheduled,
     });
 
-    // Update stats
     await User.findByIdAndUpdate(req.user._id, { $inc: { 'messageStats.totalSent': 1 } });
     if (receiver) await User.findByIdAndUpdate(receiver, { $inc: { 'messageStats.totalReceived': 1 } });
 
-    const populated = await message.populate([
+    const populated = await Message.findById(message._id).populate([
       { path: 'sender', select: 'name avatar' },
       { path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } }
     ]);
@@ -52,7 +52,6 @@ const getMessages = async (req, res) => {
       .populate({ path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } })
       .sort({ createdAt: 1 });
 
-    // Mark self-destruct messages
     const now = new Date();
     for (const msg of messages) {
       if (msg.isSelfDestruct && msg.selfDestructAt && msg.selfDestructAt < now) {
@@ -205,7 +204,6 @@ const getAnalytics = async (req, res) => {
       Message.countDocuments({ 'reactions.user': userId }),
     ]);
 
-    // Daily breakdown last 7 days
     const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
     const dailyMessages = await Message.aggregate([
       { $match: { sender: userId, createdAt: { $gte: sevenDaysAgo }, isDeleted: false } },

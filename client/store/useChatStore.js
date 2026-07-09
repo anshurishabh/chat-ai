@@ -12,7 +12,7 @@ const useChatStore = create((set, get) => ({
   onlineUsers: [],
   typingUsers: [],
   loading: false,
-  replyingTo: null,
+  replyTo: null,
   pinnedMessages: [],
   msgSearchResults: [],
   msgSearchQuery: '',
@@ -22,17 +22,17 @@ const useChatStore = create((set, get) => ({
   wallpapers: {},
   showAIChat: false,
 
-  // Contacts — sirf jo pehle baat kar chuke
+  // Contacts fetch pipeline update
   getContacts: async () => {
     try {
       const { data } = await axios.get('/auth/contacts');
       set({ contacts: data });
     } catch (error) {
-      console.error(error);
+      console.error("Fetch contacts error:", error);
     }
   },
 
-  // Search users
+  // Search users system
   searchUsers: async (query) => {
     set({ searchQuery: query });
     if (!query || query.trim().length < 2) {
@@ -49,8 +49,8 @@ const useChatStore = create((set, get) => ({
 
   clearSearch: () => set({ searchQuery: '', searchResults: [] }),
 
-  setSelectedUser: (user) => set({ selectedUser: user, selectedGroup: null, messages: [], replyingTo: null, showAIChat: false }),
-  setSelectedGroup: (group) => set({ selectedGroup: group, selectedUser: null, messages: [], replyingTo: null, showAIChat: false }),
+  setSelectedUser: (user) => set({ selectedUser: user, selectedGroup: null, messages: [], replyTo: null, showAIChat: false }),
+  setSelectedGroup: (group) => set({ selectedGroup: group, selectedUser: null, messages: [], replyTo: null, showAIChat: false }),
   setShowAIChat: (val) => set({ showAIChat: val, selectedUser: null, selectedGroup: null }),
 
   getMessages: async (userId) => {
@@ -77,9 +77,11 @@ const useChatStore = create((set, get) => ({
     try {
       const { data } = await axios.post('/messages', messageData);
       set((state) => ({ messages: [...state.messages, data] }));
-      get().getContacts();
+      
+      // Force refresh contacts instantly to ensure user pops up in sidebar layout
+      await get().getContacts();
     } catch (error) {
-      console.error(error);
+      console.error("Message transmission client error:", error);
     }
   },
 
@@ -155,8 +157,8 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  setReplyingTo: (message) => set({ replyingTo: message }),
-  clearReplyingTo: () => set({ replyingTo: null }),
+  setReplyingTo: (message) => set({ replyTo: message }),
+  clearReplyingTo: () => set({ replyTo: null }),
 
   toggleMsgSearch: () => set((state) => ({ showMsgSearch: !state.showMsgSearch, msgSearchQuery: '', msgSearchResults: [] })),
 
