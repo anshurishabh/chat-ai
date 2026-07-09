@@ -1,21 +1,26 @@
+
 import { create } from 'zustand';
 import axios from '../utils/axios';
 
 const useAuthStore = create((set, get) => ({
-  user: null, // Initial execution state holds null for SSR sync safety
+  user: null,
   loading: false,
   error: null,
   theme: 'dark',
-  isHydrated: false, // Flag to verify if hydration completed safely
+  isHydrated: false,
 
-  // Method to safely hydrate client state after mounting
   hydrateAuth: () => {
     if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('nexchat-user');
-      if (storedUser && storedUser !== 'null') {
-        const parsed = JSON.parse(storedUser);
-        set({ user: parsed, theme: parsed.theme || 'dark', isHydrated: true });
-      } else {
+      try {
+        const storedUser = localStorage.getItem('nexchat-user');
+        if (storedUser && storedUser !== 'null') {
+          const parsed = JSON.parse(storedUser);
+          set({ user: parsed, theme: parsed.theme || 'dark', isHydrated: true });
+        } else {
+          set({ isHydrated: true });
+        }
+      } catch (err) {
+        console.error("Hydration error handler:", err);
         set({ isHydrated: true });
       }
     }
@@ -24,12 +29,22 @@ const useAuthStore = create((set, get) => ({
   register: async (name, email, password) => {
     set({ loading: true, error: null });
     try {
-      const { data } = await axios.post('/auth/register', { name, email, password });
-      localStorage.setItem('nexchat-user', JSON.stringify(data));
-      set({ user: data, loading: false, theme: data.theme || 'dark' });
-      return true;
+      // Explicit data layout mapping to secure network tunnel payload processing
+      const { data } = await axios.post('/auth/register', { 
+        name: name.trim(), 
+        email: email.trim().toLowerCase(), 
+        password 
+      });
+      if (data && data.token) {
+        localStorage.setItem('nexchat-user', JSON.stringify(data));
+        set({ user: data, loading: false, theme: data.theme || 'dark' });
+        return true;
+      }
+      set({ error: 'Invalid response from server matrix', loading: false });
+      return false;
     } catch (error) {
-      set({ error: error.response?.data?.message || 'Error', loading: false });
+      const errMsg = error.response?.data?.message || 'Registration failed. Network boundary error.';
+      set({ error: errMsg, loading: false });
       return false;
     }
   },
@@ -37,12 +52,21 @@ const useAuthStore = create((set, get) => ({
   login: async (email, password) => {
     set({ loading: true, error: null });
     try {
-      const { data } = await axios.post('/auth/login', { email, password });
-      localStorage.setItem('nexchat-user', JSON.stringify(data));
-      set({ user: data, loading: false, theme: data.theme || 'dark' });
-      return true;
+      // Standardize input parsing arrays context to prevent compile anomalies
+      const { data } = await axios.post('/auth/login', { 
+        email: email.trim().toLowerCase(), 
+        password 
+      });
+      if (data && data.token) {
+        localStorage.setItem('nexchat-user', JSON.stringify(data));
+        set({ user: data, loading: false, theme: data.theme || 'dark' });
+        return true;
+      }
+      set({ error: 'Invalid response context payload', loading: false });
+      return false;
     } catch (error) {
-      set({ error: error.response?.data?.message || 'Error', loading: false });
+      const errMsg = error.response?.data?.message || 'Login rejected. Verify credential values.';
+      set({ error: errMsg, loading: false });
       return false;
     }
   },
