@@ -1,56 +1,43 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-// Simple link preview using meta tags via API
 export default function LinkPreview({ url }) {
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [domain, setDomain] = useState('');
 
   useEffect(() => {
-    fetchPreview();
-  }, [url]);
-
-  const fetchPreview = async () => {
     try {
-      // Use a free link preview service
-      const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      if (data.status === 'success') {
-        setPreview({
-          title: data.data.title,
-          description: data.data.description,
-          image: data.data.image?.url,
-          url: data.data.url,
-        });
+      if (url) {
+        const parsed = new URL(url);
+        setDomain(parsed.hostname);
       }
     } catch (err) {
-      console.error('Link preview failed');
-    } finally {
-      setLoading(false);
+      console.error('Invalid URL parsing:', err);
     }
-  };
+  }, [url]);
 
-  if (loading) {
-    return (
-      <div className="mt-2 bg-white/5 border border-white/10 rounded-xl p-3 animate-pulse">
-        <div className="h-3 bg-white/10 rounded w-3/4 mb-2" />
-        <div className="h-2 bg-white/5 rounded w-1/2" />
-      </div>
-    );
-  }
-
-  if (!preview) return null;
+  if (!url) return null;
 
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="mt-2 block bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl overflow-hidden transition-colors">
-      {preview.image && (
-        <img src={preview.image} alt={preview.title} className="w-full h-32 object-cover" onError={(e) => e.target.style.display = 'none'} />
-      )}
-      <div className="p-3">
-        <p className="text-white text-xs font-semibold truncate">{preview.title}</p>
-        {preview.description && <p className="text-white/40 text-xs mt-0.5 line-clamp-2">{preview.description}</p>}
-        <p className="text-purple-400 text-[10px] mt-1 truncate">{url}</p>
-      </div>
-    </a>
+    <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 hover:bg-black/30 transition-all max-w-sm">
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noopener noreferrer" 
+        className="block p-3 space-y-1 group"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-purple-400">🔗 Link Detected</span>
+          <span className="text-[10px] text-white/40 truncate group-hover:text-white/60 transition-colors">
+            {domain}
+          </span>
+        </div>
+        <p className="text-sm text-blue-400 font-medium truncate group-hover:underline">
+          {url}
+        </p>
+        <p className="text-xs text-white/50 line-clamp-1">
+          Click to open this link layout resource safely.
+        </p>
+      </a>
+    </div>
   );
 }

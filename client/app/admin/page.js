@@ -10,14 +10,6 @@ export default function AdminPage() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState('');
 
-  useEffect(() => {
-    if (!user?.isAdmin) {
-      window.location.href = '/';
-      return;
-    }
-    fetchUsers();
-  }, []);
-
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -30,6 +22,15 @@ export default function AdminPage() {
     }
   };
 
+  useEffect(() => {
+    if (!user?.isAdmin) {
+      window.location.href = '/';
+      return;
+    }
+    fetchUsers();
+  }, []);
+
+  
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2500);

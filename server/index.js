@@ -16,41 +16,53 @@ const groupRoutes = require('./routes/groupRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-const extraRoutes = require('./routes/extraRoutes');
 
 const app = express();
 const server = http.createServer(app);
 
+// Allowed cross-origin arrays matrix configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://chat-ai-18y1.vercel.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 const io = socketIO(server, {
   cors: {
-    origin: [process.env.FRONTEND_URL || 'http://localhost:3000', 'https://chat-ai-18y1.vercel.app'],
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   },
   maxHttpBufferSize: 1e8,
 });
 
 app.use(cors({
-  origin: [process.env.FRONTEND_URL || 'http://localhost:3000', 'https://chat-ai-18y1.vercel.app'],
+  origin: allowedOrigins,
   credentials: true
 }));
+
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
 connectDB();
 
+// API Base Routing Table
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/extra', extraRoutes);
 
-app.get('/', (req, res) => res.json({ message: 'NexChat server running! 🚀' }));
+app.get('/', (req, res) => {
+  res.json({ message: 'NexChat server running successfully! 🚀', status: 'healthy' });
+});
 
 socketHandler(io);
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running securely on port ${PORT}`));

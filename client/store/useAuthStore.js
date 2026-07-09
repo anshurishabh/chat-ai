@@ -1,16 +1,25 @@
 import { create } from 'zustand';
 import axios from '../utils/axios';
 
-const getUser = () => {
-  if (typeof window === 'undefined') return null;
-  return JSON.parse(localStorage.getItem('nexchat-user') || 'null');
-};
-
 const useAuthStore = create((set, get) => ({
-  user: getUser(),
+  user: null, // Initial execution state holds null for SSR sync safety
   loading: false,
   error: null,
-  theme: getUser()?.theme || 'dark',
+  theme: 'dark',
+  isHydrated: false, // Flag to verify if hydration completed safely
+
+  // Method to safely hydrate client state after mounting
+  hydrateAuth: () => {
+    if (typeof window !== 'undefined') {
+      const storedUser = localStorage.getItem('nexchat-user');
+      if (storedUser && storedUser !== 'null') {
+        const parsed = JSON.parse(storedUser);
+        set({ user: parsed, theme: parsed.theme || 'dark', isHydrated: true });
+      } else {
+        set({ isHydrated: true });
+      }
+    }
+  },
 
   register: async (name, email, password) => {
     set({ loading: true, error: null });

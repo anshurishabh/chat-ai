@@ -9,8 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@giphy/js-fetch-api": "^5.8.0",
-    "@giphy/react-components": "^10.1.2",
     "agora-rtc-sdk-ng": "^4.24.5",
     "autoprefixer": "^10.5.2",
     "axios": "^1.18.1",
