@@ -1,3 +1,4 @@
+
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -43,26 +44,30 @@ const getMe = async (req, res) => {
   }
 };
 
-// Users sirf search pe dikhein
+// Fixed Search Users Logic with safe query execution validation boundary fallback
 const searchUsers = async (req, res) => {
   try {
     const { q } = req.query;
     if (!q || q.trim().length < 2) return res.json([]);
+    
     const me = await User.findById(req.user._id).select('blockedUsers');
+    // Ensure blocked array list fallback parameter is safely mapped as array list index parameters
+    const blockedList = me && me.blockedUsers ? me.blockedUsers : [];
+
     const users = await User.find({
-      _id: { $ne: req.user._id, $nin: me.blockedUsers },
+      _id: { $ne: req.user._id, $nin: blockedList },
       $or: [
-        { name: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } }
+        { name: { $regex: q.trim(), $options: 'i' } },
+        { email: { $regex: q.trim(), $options: 'i' } }
       ]
-    }).select('-password -blockedUsers').limit(10);
+    }).select('name email avatar bio isOnline lastSeen').limit(15);
+    
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Pehle se jo conversations hain unke users
 const getRecentContacts = async (req, res) => {
   try {
     const Message = require('../models/Message');
@@ -124,7 +129,6 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// Admin — sare users dekho
 const adminGetAllUsers = async (req, res) => {
   try {
     if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin only' });
@@ -135,7 +139,6 @@ const adminGetAllUsers = async (req, res) => {
   }
 };
 
-// Admin — user delete karo
 const adminDeleteUser = async (req, res) => {
   try {
     if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin only' });
@@ -149,7 +152,6 @@ const adminDeleteUser = async (req, res) => {
   }
 };
 
-// Admin — user ko admin banao
 const adminToggleAdmin = async (req, res) => {
   try {
     if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin only' });
