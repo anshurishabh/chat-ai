@@ -1,4 +1,3 @@
-
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -10,13 +9,31 @@ const generateToken = (id) => {
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ message: 'Please fill all fields' });
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: 'User already exists' });
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Please fill all fields' });
+    }
+    const userExists = await User.findOne({ email: email.toLowerCase() });
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await User.create({ name, email, password: hashedPassword });
-    res.status(201).json({ _id: user._id, name: user.name, email: user.email, avatar: user.avatar, bio: user.bio, theme: user.theme, token: generateToken(user._id) });
+    
+    const user = await User.create({ 
+      name, 
+      email: email.toLowerCase(), 
+      password: hashedPassword 
+    });
+
+    res.status(201).json({ 
+      _id: user._id, 
+      name: user.name, 
+      email: user.email, 
+      avatar: user.avatar, 
+      bio: user.bio, 
+      theme: user.theme, 
+      token: generateToken(user._id) 
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -25,11 +42,27 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid email or password' });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Please enter all fields' });
+    }
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid email or password' });
-    res.json({ _id: user._id, name: user.name, email: user.email, avatar: user.avatar, bio: user.bio, theme: user.theme, isAdmin: user.isAdmin, token: generateToken(user._id) });
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
+    res.json({ 
+      _id: user._id, 
+      name: user.name, 
+      email: user.email, 
+      avatar: user.avatar, 
+      bio: user.bio, 
+      theme: user.theme, 
+      isAdmin: user.isAdmin, 
+      token: generateToken(user._id) 
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -44,14 +77,12 @@ const getMe = async (req, res) => {
   }
 };
 
-// Fixed Search Users Logic with safe query execution validation boundary fallback
 const searchUsers = async (req, res) => {
   try {
     const { q } = req.query;
     if (!q || q.trim().length < 2) return res.json([]);
     
     const me = await User.findById(req.user._id).select('blockedUsers');
-    // Ensure blocked array list fallback parameter is safely mapped as array list index parameters
     const blockedList = me && me.blockedUsers ? me.blockedUsers : [];
 
     const users = await User.find({
@@ -71,6 +102,7 @@ const searchUsers = async (req, res) => {
 const getRecentContacts = async (req, res) => {
   try {
     const Message = require('../models/Message');
+    // Fetch all messages involving the current user to map active conversation histories
     const messages = await Message.find({
       $or: [{ sender: req.user._id }, { receiver: req.user._id }],
       isDeleted: false
@@ -78,11 +110,15 @@ const getRecentContacts = async (req, res) => {
 
     const contactIds = new Set();
     messages.forEach(m => {
-      if (m.sender.toString() !== req.user._id.toString()) contactIds.add(m.sender.toString());
-      if (m.receiver && m.receiver.toString() !== req.user._id.toString()) contactIds.add(m.receiver.toString());
+      if (m.sender && m.sender.toString() !== req.user._id.toString()) {
+        contactIds.add(m.sender.toString());
+      }
+      if (m.receiver && m.receiver.toString() !== req.user._id.toString()) {
+        contactIds.add(m.receiver.toString());
+      }
     });
 
-    const contacts = await User.find({ _id: { $in: Array.from(contactIds) } }).select('-password -blockedUsers');
+    const contacts = await User.find({ _id: { $in: Array.from(contactIds) } }).select('name email avatar bio isOnline lastSeen');
     res.json(contacts);
   } catch (error) {
     res.status(500).json({ message: error.message });
