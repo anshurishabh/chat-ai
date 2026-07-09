@@ -20,7 +20,7 @@ const useAuthStore = create((set, get) => ({
           set({ isHydrated: true });
         }
       } catch (err) {
-        console.error("Hydration error handler:", err);
+        console.error("Hydration recovery error:", err);
         set({ isHydrated: true });
       }
     }
@@ -29,7 +29,6 @@ const useAuthStore = create((set, get) => ({
   register: async (name, email, password) => {
     set({ loading: true, error: null });
     try {
-      // Explicit data layout mapping to secure network tunnel payload processing
       const { data } = await axios.post('/auth/register', { 
         name: name.trim(), 
         email: email.trim().toLowerCase(), 
@@ -40,10 +39,11 @@ const useAuthStore = create((set, get) => ({
         set({ user: data, loading: false, theme: data.theme || 'dark' });
         return true;
       }
-      set({ error: 'Invalid response from server matrix', loading: false });
+      set({ error: 'Server authentication handshake anomaly.', loading: false });
       return false;
     } catch (error) {
-      const errMsg = error.response?.data?.message || 'Registration failed. Network boundary error.';
+      // Catch exact error sent by backend controllers matrix
+      const errMsg = error.response?.data?.message || 'Registration rejected by backend interface node.';
       set({ error: errMsg, loading: false });
       return false;
     }
@@ -52,7 +52,6 @@ const useAuthStore = create((set, get) => ({
   login: async (email, password) => {
     set({ loading: true, error: null });
     try {
-      // Standardize input parsing arrays context to prevent compile anomalies
       const { data } = await axios.post('/auth/login', { 
         email: email.trim().toLowerCase(), 
         password 
@@ -62,10 +61,11 @@ const useAuthStore = create((set, get) => ({
         set({ user: data, loading: false, theme: data.theme || 'dark' });
         return true;
       }
-      set({ error: 'Invalid response context payload', loading: false });
+      set({ error: 'Invalid server token signature schema.', loading: false });
       return false;
     } catch (error) {
-      const errMsg = error.response?.data?.message || 'Login rejected. Verify credential values.';
+      // Catch exact database check failure message (e.g., 'Invalid email or password')
+      const errMsg = error.response?.data?.message || 'Login credentials processing error.';
       set({ error: errMsg, loading: false });
       return false;
     }
