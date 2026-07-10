@@ -18,8 +18,8 @@ export default function ChatWindow({ onBack }) {
   const { user, theme } = useAuthStore();
   const {
     selectedUser, selectedGroup, messages, getMessages, getGroupMessages,
-    typingUsers, loading, onlineUsers,
-    replyingTo, clearReplyingTo,
+    typingUsers, loading, onlineUsers, contacts, getContacts,
+    replyTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
     showMsgSearch, toggleMsgSearch, msgSearchQuery, msgSearchResults, searchMessages,
     viewProfile, viewingProfile, closeProfile,
@@ -48,16 +48,29 @@ export default function ChatWindow({ onBack }) {
   const [selfDestructMode, setSelfDestructMode] = useState(false);
   const [selfDestructSeconds, setSelfDestructSeconds] = useState(30);
 
+  // Message Forwarding and Tags States UI Layer
+  const [forwardingMsg, setForwardingMsg] = useState(null);
+  const [selectedLabel, setSelectedLabel] = useState(''); // Label State UI
+
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
   const messageRefs = useRef({});
+  const audioNotificationRef = useRef(null);
+  
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
   useEffect(() => {
+    // Standard initialization of notification sound asset link layer
+    audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
+    
     setCallbacks({
       onIncomingCall: (data) => setIncomingCall(data),
       onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
+      onReceiveMessage: () => {
+        // Play notification tone stream on safe message capture loops
+        audioNotificationRef.current?.play().catch(e => console.log("Audio trigger ignored until interaction."));
+      }
     });
   }, []);
 
@@ -69,16 +82,17 @@ export default function ChatWindow({ onBack }) {
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
-    setShowHeaderMenu(false);
+    showHeaderMenu && setShowHeaderMenu(false);
     setInput('');
     setSelfDestructMode(false);
+    setSelectedLabel('');
   }, [selectedUser, selectedGroup]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (text) => {
+  const handleSend = (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
 
@@ -94,13 +108,29 @@ export default function ChatWindow({ onBack }) {
       type: 'text',
       receiver: selectedUser?._id || null,
       groupId: selectedGroup?._id || null,
-      replyTo: replyingTo?._id || null,
+      replyTo: replyTo?._id || null,
       isSelfDestruct: selfDestructMode,
       selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
+      label: customLabel || selectedLabel || null // Save message tag label context parameters node
     });
     setInput('');
+    setSelectedLabel('');
     clearSmartReplies();
     clearReplyingTo();
+  };
+
+  // Execution algorithm handler for payload forwarding
+  const executeForward = async (targetContactId) => {
+    if (!forwardingMsg) return;
+    await sendMessage({
+      sender: user._id,
+      content: forwardingMsg.content,
+      type: forwardingMsg.type || 'text',
+      fileUrl: forwardingMsg.fileUrl || '',
+      receiver: targetContactId,
+      isForwarded: true
+    });
+    setForwardingMsg(null);
   };
 
   const handleImageSend = (imageData) => {
@@ -122,7 +152,7 @@ export default function ChatWindow({ onBack }) {
       fileUrl: fileData.url,
       receiver: selectedUser?._id || null,
       groupId: selectedGroup?._id || null,
-      replyTo: replyingTo?._id || null,
+      replyTo: replyTo?._id || null,
     });
     clearReplyingTo();
   };
@@ -138,7 +168,7 @@ export default function ChatWindow({ onBack }) {
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    if (e.key === 'Escape' && replyingTo) clearReplyingTo();
+    if (e.key === 'Escape' && replyTo) clearReplyingTo();
   };
 
   const scrollToMessage = (messageId) => {
@@ -200,7 +230,7 @@ export default function ChatWindow({ onBack }) {
                   selectedUser && { label: '👤 Profile', action: () => { viewProfile(selectedUser._id); setShowHeaderMenu(false); } },
                   { label: '🎨 Wallpaper', action: () => { setShowWallpaperPicker(true); setShowHeaderMenu(false); } },
                   { label: '🖼️ AI Image', action: () => { setShowImageGenerator(true); setShowHeaderMenu(false); }, color: 'text-purple-400' },
-                  { label: '📝 Summary', action: async () => { const s = await summarizeChat(messages); setSummary(s); setShowSummary(true); setShowHeaderMenu(false); } },
+                  { label: '¼ Summary', action: async () => { const s = await summarizeChat(messages); setSummary(s); setShowSummary(true); setShowHeaderMenu(false); } },
                   { label: '🔍 Search', action: () => { toggleMsgSearch(); setShowHeaderMenu(false); } },
                   { label: '📌 Pinned', action: () => { setShowPinnedBar(!showPinnedBar); setShowHeaderMenu(false); } },
                   { label: `💣 ${selfDestructMode ? '✅ ' : ''}Self-Destruct`, action: () => { setSelfDestructMode(!selfDestructMode); setShowHeaderMenu(false); }, color: selfDestructMode ? 'text-red-400' : '' },
@@ -216,155 +246,77 @@ export default function ChatWindow({ onBack }) {
         </div>
       </div>
 
-      {/* Self destruct bar */}
-      {selfDestructMode && (
-        <div className="relative z-10 px-4 py-2 bg-red-500/10 border-b border-red-500/20 flex items-center justify-between">
-          <span className="text-red-400 text-xs font-semibold">💣 Self-Destruct ON</span>
-          <div className="flex items-center gap-2">
-            <select value={selfDestructSeconds} onChange={(e) => setSelfDestructSeconds(Number(e.target.value))} className="bg-transparent text-red-400 text-xs border border-red-500/30 rounded-lg px-2 py-0.5">
-              <option value={10}>10s</option>
-              <option value={30}>30s</option>
-              <option value={60}>1min</option>
-              <option value={300}>5min</option>
-            </select>
-            <button onClick={() => setSelfDestructMode(false)} className="text-red-400 text-xs hover:underline">Off</button>
-          </div>
-        </div>
-      )}
-
-      {/* Search */}
-      {showMsgSearch && (
-        <div className={`relative z-10 px-4 py-2 border-b ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1a0a2e]/80 border-white/10'}`}>
-          <input autoFocus value={msgSearchQuery} onChange={(e) => searchMessages(e.target.value)} placeholder="Search messages..." className={`w-full px-4 py-2 rounded-full border text-sm focus:outline-none ${isLight ? 'bg-gray-100 border-gray-200 text-gray-900' : 'bg-white/10 border-white/20 text-white'}`} />
-          {msgSearchResults.length > 0 && (
-            <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
-              {msgSearchResults.map((m) => (
-                <div key={m._id} onClick={() => { scrollToMessage(m._id); toggleMsgSearch(); }} className={`px-3 py-2 rounded-xl cursor-pointer ${isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-white/5 hover:bg-white/10'}`}>
-                  <p className="text-purple-400 text-xs font-semibold">{m.sender?.name}</p>
-                  <p className={`text-xs truncate ${isLight ? 'text-gray-600' : 'text-white'}`}>{m.content}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Pinned */}
-      {showPinnedBar && pinnedMessages.length > 0 && (
-        <div className="relative z-10 px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
-          <p className="text-yellow-400 text-xs font-semibold mb-1">📌 Pinned</p>
-          {pinnedMessages.slice(0, 2).map((m) => (
-            <div key={m._id} onClick={() => scrollToMessage(m._id)} className="text-xs truncate cursor-pointer text-white/60 hover:text-white py-0.5">
-              {m.sender?.name}: {m.content}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Summary */}
-      {showSummary && summary && (
-        <div className={`absolute top-24 left-4 right-4 rounded-2xl p-4 z-40 shadow-2xl border ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1e1e30]/95 border-purple-500/30'}`}>
-          <div className="flex justify-between mb-2">
-            <p className="text-purple-400 font-semibold text-sm">📝 Summary</p>
-            <button onClick={() => setShowSummary(false)} className="text-white/40 hover:text-white">✕</button>
-          </div>
-          <p className={`text-sm leading-relaxed ${isLight ? 'text-gray-700' : 'text-white'}`}>{summary}</p>
-        </div>
-      )}
-
-      {/* Incoming call */}
-      {incomingCall && !activeCall && (
-        <div className="absolute top-24 left-4 right-4 bg-[#1e1e30]/95 border border-green-500/30 rounded-2xl p-4 z-40 shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl animate-pulse">
-                {incomingCall.callerName?.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-white font-semibold">{incomingCall.callerName}</p>
-                <p className="text-white/40 text-xs">Incoming {incomingCall.isVoiceOnly ? 'voice' : 'video'} call...</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setIncomingCall(null)} className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center text-2xl">📵</button>
-              <button onClick={() => { setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal }); setIncomingCall(null); }} className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-2xl animate-bounce">📞</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MESSAGES */}
+      {/* MESSAGES CORE VIEWPORTS PANEL */}
       <div className="chat-messages relative z-10 px-4 py-4 space-y-2">
         {loading && <div className="text-center py-4 text-white/30 text-sm">Loading...</div>}
         {messages.map((msg) => {
           const isMe = msg.sender._id === user._id || msg.sender === user._id;
           return (
             <div key={msg._id} ref={(el) => { messageRefs.current[msg._id] = el; }}>
-              <MessageBubble msg={msg} isMe={isMe} isGroup={isGroup} onScrollToMessage={scrollToMessage} theme={theme} />
+              <MessageBubble msg={msg} isMe={isMe} isGroup={isGroup} onScrollToMessage={scrollToMessage} theme={theme} onForward={(m) => setForwardingMsg(m)} />
             </div>
           );
         })}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Smart replies */}
-      {smartReplies.length > 0 && (
-        <div className="relative z-10 px-4 pb-2 flex gap-2 overflow-x-auto">
-          {smartReplies.map((reply, i) => (
-            <button key={i} onClick={() => handleSend(reply)} className={`whitespace-nowrap text-xs px-3 py-2 rounded-full border flex-shrink-0 ${isLight ? 'bg-white border-gray-200 text-gray-700' : 'bg-white/10 border-white/20 text-white'}`}>
-              {reply}
+      {/* MESSAGE FORWARDING UI SELECTOR MODAL OVERLAY */}
+      {forwardingMsg && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-[#111120] border border-white/10 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-white font-bold text-sm">↩️ Forward Message To:</h3>
+              <button onClick={() => setForwardingMsg(null)} className="text-white/40 hover:text-white">✕</button>
+            </div>
+            <p className="text-xs text-white/40 mb-3 bg-white/5 p-2 rounded-xl border border-white/5 truncate">"{forwardingMsg.content}"</p>
+            <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
+              {contacts.map((contact) => (
+                <div key={contact._id} className="flex justify-between items-center p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-purple-500/10 transition-colors">
+                  <div className="flex items-center gap-2 truncate">
+                    <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold text-white uppercase">{contact.name?.charAt(0)}</div>
+                    <span className="text-white text-xs truncate">{contact.name}</span>
+                  </div>
+                  <button onClick={() => executeForward(contact._id)} className="bg-purple-500 hover:bg-purple-400 text-white text-[10px] px-3 py-1 rounded-lg font-bold transition-all">Send</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INPUT ACTIONS AND LABEL/TAGS SELECTION BAR */}
+      <div className={`chat-input relative z-10 px-4 pb-8 pt-2 backdrop-blur-xl border-t ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#0f0f1a]/90 border-white/5'}`}>
+        <div className="flex gap-2 mb-2 overflow-x-auto pb-1 items-center">
+          <span className="text-[10px] text-white/30 font-bold uppercase tracking-wider flex-shrink-0">Labels:</span>
+          {['Work', 'Urgent', 'Personal', 'Important'].map((labelName) => (
+            <button
+              key={labelName}
+              onClick={() => setSelectedLabel(selectedLabel === labelName ? '' : labelName)}
+              className={`text-[10px] px-2.5 py-1 rounded-md font-bold transition-all border ${
+                selectedLabel === labelName 
+                  ? 'bg-purple-600 border-purple-400 text-white shadow-md shadow-purple-500/20' 
+                  : 'bg-white/5 border-white/10 text-white/50 hover:border-white/20'
+              }`}
+            >
+              🏷️ {labelName}
             </button>
           ))}
-        </div>
-      )}
+          
+          <div className="h-4 w-px bg-white/10 mx-1 flex-shrink-0" />
 
-      {/* Translate preview */}
-      {translatedMsg && (
-        <div className={`relative z-10 mx-4 mb-2 rounded-2xl px-4 py-3 border ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-white/5 border-white/10'}`}>
-          <p className="text-purple-400 text-xs mb-1">🌍 {translateLang}:</p>
-          <p className={`text-sm ${isLight ? 'text-gray-800' : 'text-white'}`}>{translatedMsg}</p>
-          <button onClick={() => { setInput(translatedMsg); setTranslatedMsg(''); }} className="text-purple-400 text-xs mt-1 hover:underline">Use ↑</button>
-        </div>
-      )}
-
-      {/* Reply bar */}
-      {replyingTo && (
-        <div className={`relative z-10 mx-4 mb-2 border-l-2 border-purple-400 rounded-r-2xl px-4 py-2 flex items-center justify-between ${isLight ? 'bg-purple-50' : 'bg-white/5'}`}>
-          <div className="min-w-0">
-            <p className="text-purple-400 text-xs font-semibold">↩️ {replyingTo.sender?.name}</p>
-            <p className={`text-xs truncate ${isLight ? 'text-gray-500' : 'text-white/50'}`}>{replyingTo.content || '📎'}</p>
-          </div>
-          <button onClick={clearReplyingTo} className="text-white/30 hover:text-white px-2">✕</button>
-        </div>
-      )}
-
-      {/* INPUT */}
-      <div className={`chat-input relative z-10 px-4 pb-8 pt-2 backdrop-blur-xl border-t ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#0f0f1a]/90 border-white/5'}`}>
-        <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
           {[
             { label: '✨ Grammar', action: async () => { if (!input.trim()) return; const c = await correctGrammar(input); setInput(c); } },
             { label: '🌍 Translate', action: () => setShowTranslate(!showTranslate), active: showTranslate },
             { label: '🎨 /imagine', action: () => setShowImageGenerator(true), color: true },
-            { label: `💣 ${selfDestructMode ? 'ON' : 'Destruct'}`, action: () => setSelfDestructMode(!selfDestructMode), danger: selfDestructMode },
           ].map((tool) => (
-            <button key={tool.label} onClick={tool.action} className={`whitespace-nowrap text-xs px-3 py-1.5 rounded-full border flex-shrink-0 ${
-              tool.danger ? 'border-red-500/50 text-red-400 bg-red-500/10' :
+            <button key={tool.label} onClick={tool.action} className={`whitespace-nowrap text-[10px] px-3 py-1 rounded-full border flex-shrink-0 ${
               tool.color ? 'border-purple-500/50 text-purple-400 bg-purple-500/10' :
               tool.active ? 'border-purple-400 text-purple-300 bg-purple-500/20' :
-              isLight ? 'border-gray-200 text-gray-500 hover:border-purple-400' :
-              'border-white/10 text-white/40 hover:border-purple-400 hover:text-white'
+              isLight ? 'border-gray-200 text-gray-500 hover:border-purple-400' : 'border-white/10 text-white/40 hover:border-purple-400 hover:text-white'
             }`}>
               {tool.label}
             </button>
           ))}
-          {showTranslate && (
-            <>
-              <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} className={`text-xs px-2 py-1 rounded-full border flex-shrink-0 ${isLight ? 'bg-white border-gray-200 text-gray-700' : 'bg-[#1e1e30] border-white/20 text-white'}`}>
-                {['Hindi','Spanish','French','German','Japanese','Arabic','English'].map(l => <option key={l}>{l}</option>)}
-              </select>
-              <button onClick={async () => { if (!input.trim()) return; const r = await translateMessage(input, translateLang); setTranslatedMsg(r); }} className="bg-purple-500 text-white text-xs px-3 py-1 rounded-full font-bold flex-shrink-0">Go</button>
-            </>
-          )}
         </div>
 
         {showEmojiPicker && (
@@ -380,7 +332,7 @@ export default function ChatWindow({ onBack }) {
               value={input}
               onChange={handleTyping}
               onKeyDown={handleKeyDown}
-              placeholder="Message..."
+              placeholder={selectedLabel ? `Message with [${selectedLabel}] tag...` : "Message..."}
               rows={1}
               style={{ resize: 'none', maxHeight: '100px' }}
               className={`flex-1 bg-transparent text-sm focus:outline-none leading-relaxed ${isLight ? 'text-gray-900 placeholder-gray-400' : 'text-white placeholder-white/30'}`}
