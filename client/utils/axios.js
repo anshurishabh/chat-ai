@@ -1,27 +1,21 @@
 
 import axios from 'axios';
 
+// Dynamically check if the code is running on Vercel production or local machine
 const getBaseURL = () => {
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    
-    // 1. Production Mode (Vercel)
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.startsWith('192.168.') && !hostname.startsWith('10.')) {
+    // If running on Vercel production deployment
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       return 'https://nexchat-server-w5gq.onrender.com/api';
     }
-    
-    // 2. Mobile Local Testing Mode (Laptop IP used on phone)
-    if (hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
-      return `http://${hostname}:5000/api`;
-    }
   }
-  // 3. Absolute Local Fallback
+  // Fallback for local summer training environment
   return 'http://localhost:5000/api';
 };
 
 const axiosInstance = axios.create({
   baseURL: getBaseURL(),
-  timeout: 15000,
+  timeout: 15000, // 15 seconds production timeout fallback
   headers: {
     'Content-Type': 'application/json',
   }
@@ -36,7 +30,7 @@ axiosInstance.interceptors.request.use(
           config.headers.Authorization = `Bearer ${user.token}`;
         }
       } catch (err) {
-        console.error("Axios request injection crash:", err);
+        console.error("Axios token injection runtime error:", err);
       }
     }
     return config;

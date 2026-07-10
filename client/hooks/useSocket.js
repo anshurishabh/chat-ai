@@ -1,10 +1,20 @@
+
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:5000';
+// Dynamic production socket server link allocation logic
+const getSocketURL = () => {
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return 'https://nexchat-server-w5gq.onrender.com';
+    }
+  }
+  return 'http://localhost:5000';
+};
 
+const SOCKET_URL = getSocketURL();
 let socketInstance = null;
 
 const useSocket = () => {
@@ -18,6 +28,7 @@ const useSocket = () => {
     if (!socketInstance) {
       socketInstance = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
+        withCredentials: true
       });
     }
 
