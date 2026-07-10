@@ -9,6 +9,14 @@ const deviceSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 });
 
+// Embedded Schema for Security Audit Logs Tracking
+const auditLogSchema = new mongoose.Schema({
+  action: { type: String, required: true }, // e.g., 'LOGIN', '2FA_TOGGLE', 'ANONYMOUS_TOGGLE'
+  ipAddress: String,
+  deviceInfo: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true },
@@ -27,7 +35,12 @@ const userSchema = new mongoose.Schema({
   messageStats: {
     totalSent: { type: Number, default: 0 },
     totalReceived: { type: Number, default: 0 },
-  }
+  },
+  
+  // Naye Security Fields UI Layer Maps
+  isAnonymous: { type: Boolean, default: false },
+  protectedChats: { type: Map, of: String, default: {} }, // Key: ChatId, Value: Hashed Chat Password
+  auditLogs: [auditLogSchema]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
