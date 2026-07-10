@@ -16,11 +16,11 @@ const groupRoutes = require('./routes/groupRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const agoraRoutes = require('./routes/agoraRoutes'); // Registered missing agora pipeline route
 
 const app = express();
 const server = http.createServer(app);
 
-// Allowed cross-origin arrays matrix configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
@@ -50,13 +50,13 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
 connectDB();
 
-// API Base Routing Table
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/agora', agoraRoutes); // Applied missing token bridge node mapping
 
 app.get('/', (req, res) => {
   res.json({ message: 'NexChat server running successfully! 🚀', status: 'healthy' });

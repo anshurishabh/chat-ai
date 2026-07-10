@@ -1,9 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-
-const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
-const TOKEN = process.env.NEXT_PUBLIC_AGORA_TOKEN;
-const CHANNEL = process.env.NEXT_PUBLIC_AGORA_CHANNEL || 'nexchat';
+import axios from '../utils/axios';
 
 export default function VideoCall({ socket, currentUser, selectedUser, onClose, isIncoming, isVoiceOnly }) {
   const [callStatus, setCallStatus] = useState(isIncoming ? 'incoming' : 'calling');
@@ -18,11 +15,12 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   const isMountedRef = useRef(true);
   const AgoraRTCRef = useRef(null);
 
+  const CHANNEL = 'nexchat';
+
   useEffect(() => {
     isMountedRef.current = true;
 
     const init = async () => {
-      // Load Agora SDK only in the browser
       const mod = await import('agora-rtc-sdk-ng');
       AgoraRTCRef.current = mod.default;
 
@@ -101,7 +99,12 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
         setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
       });
 
-      await client.join(APP_ID, CHANNEL, TOKEN || null, currentUser._id);
+      // Secure dynamic runtime fetching token request configuration allocation block
+      const { data } = await axios.get(`/agora/token?channelName=${CHANNEL}`);
+      const targetToken = data.token || null;
+      const targetAppId = data.appId || "5e8fbc18bd8e469ba970669ee38b2512";
+
+      await client.join(targetAppId, CHANNEL, targetToken, currentUser._id);
 
       if (!isMountedRef.current) {
         await client.leave();
@@ -136,7 +139,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       if (isMountedRef.current) setCallStatus('connected');
     } catch (err) {
       if (err?.code !== 'OPERATION_ABORTED') {
-        console.error('Agora join error:', err);
+        console.error('Agora engine connection crash fallback map handled:', err);
       }
     }
   };
@@ -159,7 +162,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
       localVideoTrackRef.current?.close();
       await clientRef.current?.leave();
     } catch (err) {
-      // ignore cleanup errors
+      // safe bypass cleanup logs
     }
   };
 
@@ -188,8 +191,6 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
       <div className="w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden border border-gray-700">
-
-        {/* Header */}
         <div className="p-4 bg-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
@@ -209,15 +210,9 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           </div>
         </div>
 
-        {/* Video Area */}
         <div className="relative bg-black" style={{ height: '400px' }}>
-
           {remoteUsers.map(user => (
-            <div
-              key={user.uid}
-              id={`remote-video-${user.uid}`}
-              className="w-full h-full"
-            />
+            <div key={user.uid} id={`remote-video-${user.uid}`} className="w-full h-full" />
           ))}
 
           {remoteUsers.length === 0 && callStatus === 'connected' && (
@@ -231,10 +226,7 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
             </div>
           )}
 
-          <div
-            id="local-video"
-            className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400"
-          />
+          <div id="local-video" className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-xl overflow-hidden border-2 border-green-400" />
 
           {callStatus === 'incoming' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
@@ -266,26 +258,10 @@ export default function VideoCall({ socket, currentUser, selectedUser, onClose, 
           )}
         </div>
 
-        {/* Controls */}
         <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
-          <button
-            onClick={toggleMute}
-            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}
-          >
-            {isMuted ? '🔇' : '🎙️'}
-          </button>
-          <button
-            onClick={endCall}
-            className="w-16 h-16 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105"
-          >
-            📵
-          </button>
-          <button
-            onClick={toggleVideo}
-            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isVideoOff ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}
-          >
-            {isVideoOff ? '📵' : '📹'}
-          </button>
+          <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>{isMuted ? '🔇' : '🎙️'}</button>
+          <button onClick={endCall} className="w-16 h-16 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105">📵</button>
+          <button onClick={toggleVideo} className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ${isVideoOff ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}>{isVideoOff ? '📵' : '📹'}</button>
         </div>
       </div>
     </div>
