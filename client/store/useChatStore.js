@@ -22,28 +22,27 @@ const useChatStore = create((set, get) => ({
   wallpapers: {},
   showAIChat: false,
 
-  // Contacts fetch pipeline update
   getContacts: async () => {
     try {
       const { data } = await axios.get('/auth/contacts');
-      set({ contacts: data });
+      set({ contacts: Array.isArray(data) ? data : [] });
     } catch (error) {
-      console.error("Fetch contacts error:", error);
+      console.error("Fetch contacts error logs handled:", error);
     }
   },
 
-  // Search users system
   searchUsers: async (query) => {
     set({ searchQuery: query });
-    if (!query || query.trim().length < 2) {
+    if (!query || !query.trim() || query.trim().length < 2) {
       set({ searchResults: [] });
       return;
     }
     try {
-      const { data } = await axios.get(`/auth/search?q=${encodeURIComponent(query)}`);
-      set({ searchResults: data });
+      const { data } = await axios.get(`/auth/search?q=${encodeURIComponent(query.trim())}`);
+      set({ searchResults: Array.isArray(data) ? data : [] });
     } catch (error) {
-      console.error(error);
+      console.error("User context network layout matching crash trace:", error);
+      set({ searchResults: [] });
     }
   },
 
@@ -77,8 +76,6 @@ const useChatStore = create((set, get) => ({
     try {
       const { data } = await axios.post('/messages', messageData);
       set((state) => ({ messages: [...state.messages, data] }));
-      
-      // Force refresh contacts instantly to ensure user pops up in sidebar layout
       await get().getContacts();
     } catch (error) {
       console.error("Message transmission client error:", error);
@@ -184,7 +181,7 @@ const useChatStore = create((set, get) => ({
   getGroups: async () => {
     try {
       const { data } = await axios.get('/groups');
-      set({ groups: data });
+      set({ groups: Array.isArray(data) ? data : [] });
     } catch (error) {
       console.error(error);
     }
@@ -204,7 +201,7 @@ const useChatStore = create((set, get) => ({
   getBlockedUsers: async () => {
     try {
       const { data } = await axios.get('/auth/blocked');
-      set({ blockedUsers: data });
+      set({ blockedUsers: Array.isArray(data) ? data : [] });
     } catch (error) {
       console.error(error);
     }

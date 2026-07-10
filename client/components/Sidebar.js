@@ -24,7 +24,7 @@ export default function Sidebar({ onSelectChat }) {
     getBlockedUsers();
   }, []);
 
-  const isSearching = searchQuery.length >= 2;
+  const isSearching = searchQuery && searchQuery.trim().length >= 2;
   const displayUsers = isSearching ? searchResults : contacts;
 
   const handleSelectUser = (u) => {
@@ -145,7 +145,7 @@ export default function Sidebar({ onSelectChat }) {
       <div className="flex-1 overflow-y-auto px-2">
 
         {/* NexChat AI pinned at top */}
-        {activeTab === 'chats' && (
+        {activeTab === 'chats' && !isSearching && (
           <div
             onClick={handleSelectAI}
             className={`flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer transition-all mb-1 ${
@@ -166,7 +166,7 @@ export default function Sidebar({ onSelectChat }) {
         )}
 
         {/* Search hint */}
-        {activeTab === 'chats' && !isSearching && contacts.length === 0 && (
+        {activeTab === 'chats' && !isSearching && displayUsers.length === 0 && (
           <div className="text-center py-8 px-4">
             <p className="text-4xl mb-3">🔍</p>
             <p className="text-white/60 text-sm">Search for someone to start chatting</p>
@@ -203,14 +203,14 @@ export default function Sidebar({ onSelectChat }) {
                   )
                 }
               </div>
-              {onlineUsers.includes(u._id) && (
+              {onlineUsers && onlineUsers.includes(u._id) && (
                 <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-400 rounded-full border-2 border-[#0f0f1a]"></div>
               )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-center">
                 <p className="text-white font-medium text-sm truncate">{u.name}</p>
-                {onlineUsers.includes(u._id) && (
+                {onlineUsers && onlineUsers.includes(u._id) && (
                   <span className="text-green-400 text-[10px] flex-shrink-0">online</span>
                 )}
               </div>
