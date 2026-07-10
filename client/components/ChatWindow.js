@@ -36,6 +36,7 @@ export default function ChatWindow({ onBack }) {
   const [translatedMsg, setTranslatedMsg] = useState('');
   const [showSummary, setShowSummary] = useState(false);
   const [summary, setSummary] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false); // Summary Loading Indicator State
   const [showPinnedBar, setShowPinnedBar] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
@@ -66,7 +67,7 @@ export default function ChatWindow({ onBack }) {
       onIncomingCall: (data) => setIncomingCall(data),
       onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
       onReceiveMessage: () => {
-        audioNotificationRef.current?.play().catch(() => console.log("Audio waiting for user interaction."));
+        audioNotificationRef.current?.play().catch(() => console.log("Audio waiting context"));
       }
     });
   }, []);
@@ -114,6 +115,23 @@ export default function ChatWindow({ onBack }) {
     setSelectedLabel('');
     clearSmartReplies();
     clearReplyingTo();
+  };
+
+  const handleTriggerSummary = async () => {
+    try {
+      setShowHeaderMenu(false);
+      setSummaryLoading(true);
+      setSummary('');
+      setShowSummary(true); // Open block modal viewport instantly
+      
+      const s = await summarizeChat(messages);
+      setSummary(s || "Could not generate transaction text logs summary.");
+    } catch (err) {
+      console.error(err);
+      setSummary("Failed to link with intelligence API server.");
+    } finally {
+      setSummaryLoading(false);
+    }
   };
 
   const executeForward = async (targetContactId) => {
@@ -226,7 +244,7 @@ export default function ChatWindow({ onBack }) {
                   selectedUser && { label: '👤 Profile', action: () => { viewProfile(selectedUser._id); setShowHeaderMenu(false); } },
                   { label: '🎨 Wallpaper', action: () => { setShowWallpaperPicker(true); setShowHeaderMenu(false); } },
                   { label: '🖼️ AI Image', action: () => { setShowImageGenerator(true); setShowHeaderMenu(false); }, color: 'text-purple-400' },
-                  { label: '📝 Summary', action: async () => { const s = await summarizeChat(messages); setSummary(s); setShowSummary(true); setShowHeaderMenu(false); } }, // Fixed string character encoding bug
+                  { label: '📝 Summary', action: handleTriggerSummary }, // Call explicitly the local fixed wrapper handler
                   { label: '🔍 Search', action: () => { toggleMsgSearch(); setShowHeaderMenu(false); } },
                   { label: '📌 Pinned', action: () => { setShowPinnedBar(!showPinnedBar); setShowHeaderMenu(false); } },
                   { label: `💣 ${selfDestructMode ? '✅ ' : ''}Self-Destruct`, action: () => { setSelfDestructMode(!selfDestructMode); setShowHeaderMenu(false); }, color: selfDestructMode ? 'text-red-400' : '' },
@@ -242,7 +260,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       </div>
 
-      {/* MESSAGES */}
+      {/* MESSAGES LAYER */}
       <div className="chat-messages relative z-10 px-4 py-4 space-y-2">
         {loading && <div className="text-center py-4 text-white/30 text-sm">Loading...</div>}
         {messages.map((msg) => {
@@ -256,7 +274,7 @@ export default function ChatWindow({ onBack }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* FORWARDING OVERLAY */}
+      {/* FORWARD OVERLAY */}
       {forwardingMsg && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-[#111120] border border-white/10 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
@@ -280,7 +298,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* SEARCH OVERLAY */}
+      {/* SEARCH MESSAGE OVERLAY */}
       {showMsgSearch && (
         <div className={`relative z-10 px-4 py-2 border-b ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1a0a2e]/80 border-white/10'}`}>
           <input autoFocus value={msgSearchQuery} onChange={(e) => searchMessages(e.target.value)} placeholder="Search messages..." className={`w-full px-4 py-2 rounded-full border text-sm focus:outline-none ${isLight ? 'bg-gray-100 border-gray-200 text-gray-900' : 'bg-white/10 border-white/20 text-white'}`} />
@@ -297,7 +315,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* PINNED MESSAGES BAR */}
+      {/* PINNED BAR */}
       {showPinnedBar && pinnedMessages.length > 0 && (
         <div className="relative z-10 px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
           <p className="text-yellow-400 text-xs font-semibold mb-1">📌 Pinned</p>
@@ -309,18 +327,27 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* SUMMARY DISPLAY BOX */}
-      {showSummary && summary && (
-        <div className={`absolute top-24 left-4 right-4 rounded-2xl p-4 z-40 shadow-2xl border ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1e1e30]/95 border-purple-500/30'}`}>
-          <div className="flex justify-between mb-2">
-            <p className="text-purple-400 font-semibold text-sm">📝 Summary</p>
-            <button onClick={() => setShowSummary(false)} className="text-white/40 hover:text-white">✕</button>
+      {/* FIXED AI SUMMARY POPUP SHELL AND LOADER */}
+      {showSummary && (
+        <div className={`absolute top-24 left-4 right-4 rounded-2xl p-4 z-40 shadow-2xl border ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1e1e30]/95 border-purple-500/30'} animate-fadeIn`}>
+          <div className="flex justify-between mb-2 border-b border-white/5 pb-2">
+            <p className="text-purple-400 font-bold text-xs uppercase tracking-wider flex items-center gap-1">✨ Chat Summarizer Assistant</p>
+            <button onClick={() => setShowSummary(false)} className="text-white/40 hover:text-white text-xs">✕</button>
           </div>
-          <p className={`text-sm leading-relaxed ${isLight ? 'text-gray-700' : 'text-white'}`}>{summary}</p>
+          {summaryLoading ? (
+            <div className="flex items-center gap-2 py-4 justify-center text-xs text-white/40 font-medium">
+              <span className="w-3.5 h-3.5 border-2 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></span>
+              Analyzing conversation log metadata matrices...
+            </div>
+          ) : (
+            <p className={`text-sm leading-relaxed ${isLight ? 'text-gray-700' : 'text-white'}`}>
+              {summary || "No relevant chat logs captured to generate metric block analysis."}
+            </p>
+          )}
         </div>
       )}
 
-      {/* INCOMING CALL BANNER */}
+      {/* INCOMING CALL */}
       {incomingCall && !activeCall && (
         <div className="absolute top-24 left-4 right-4 bg-[#1e1e30]/95 border border-green-500/30 rounded-2xl p-4 z-40 shadow-2xl">
           <div className="flex items-center justify-between">
@@ -341,7 +368,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* SMART REPLIES SUGGESTIONS */}
+      {/* SMART REPLIES */}
       {smartReplies.length > 0 && (
         <div className="relative z-10 px-4 pb-2 flex gap-2 overflow-x-auto">
           {smartReplies.map((reply, i) => (
@@ -352,7 +379,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* TRANSLATION PREVIEW */}
+      {/* TRANSLATE PREVIEW */}
       {translatedMsg && (
         <div className={`relative z-10 mx-4 mb-2 rounded-2xl px-4 py-3 border ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-white/5 border-white/10'}`}>
           <p className="text-purple-400 text-xs mb-1">🌍 {translateLang}:</p>
@@ -361,7 +388,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* REPLY BAR CONTAINER */}
+      {/* REPLY BAR */}
       {replyTo && (
         <div className={`relative z-10 mx-4 mb-2 border-l-2 border-purple-400 rounded-r-2xl px-4 py-2 flex items-center justify-between ${isLight ? 'bg-purple-50' : 'bg-white/5'}`}>
           <div className="min-w-0">
@@ -372,7 +399,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       )}
 
-      {/* LOWER ACTION INPUT PANEL */}
+      {/* INPUT CONTROLS */}
       <div className={`chat-input relative z-10 px-4 pb-8 pt-2 backdrop-blur-xl border-t ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#0f0f1a]/90 border-white/5'}`}>
         <div className="flex gap-2 mb-2 overflow-x-auto pb-1 items-center">
           <span className="text-[10px] text-white/30 font-bold uppercase tracking-wider flex-shrink-0">Labels:</span>
@@ -414,12 +441,6 @@ export default function ChatWindow({ onBack }) {
             </>
           )}
         </div>
-
-        {showEmojiPicker && (
-          <div className="relative">
-            <EmojiPicker onSelect={(emoji) => { setInput(p => p + emoji); setShowEmojiPicker(false); }} onClose={() => setShowEmojiPicker(false)} />
-          </div>
-        )}
 
         <div className="flex items-end gap-2">
           <div className={`flex-1 rounded-3xl px-4 py-3 flex items-end gap-2 border ${isLight ? 'bg-gray-100 border-gray-200 focus-within:border-purple-400' : 'bg-white/5 border-white/10 focus-within:border-purple-400/50'}`}>

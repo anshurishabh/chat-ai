@@ -4,20 +4,22 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const getSmartReplies = async (req, res) => {
   try {
     const { messages } = req.body;
-    const context = messages.map(m => `${m.sender}: ${m.content}`).join('\n');
+    if (!messages || !Array.isArray(messages)) return res.json({ replies: ["Hello!", "Hi!", "Sure"] });
+    
+    const context = messages.slice(-5).map(m => `${m.sender?.name || 'User'}: ${m.content || ''}`).join('\n');
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'Smart reply assistant. Return ONLY a JSON array with 3 short replies (max 8 words each). Example: ["Sure!", "Thanks!", "Tell me more"]' },
-        { role: 'user', content: `Conversation:\n${context}\n\nSuggest 3 smart replies:` }
+        { role: 'system', content: 'Smart reply assistant. Return ONLY a plain JSON array with 3 short replies (max 6 words each). No markdown, no formatting. Example: ["Sure!", "Thanks!", "Tell me more"]' },
+        { role: 'user', content: `Conversation context:\n${context}\n\nSuggest 3 replies:` }
       ],
-      max_tokens: 100,
+      max_tokens: 80,
     });
     const text = completion.choices[0].message.content;
     const clean = text.replace(/```json|```/g, '').trim();
     res.json({ replies: JSON.parse(clean) });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json({ replies: ["Okay", "Understood", "Cool"] });
   }
 };
 
@@ -75,21 +77,35 @@ const detectSentiment = async (req, res) => {
   }
 };
 
+// Robust and crash-proof chat summarizer controller
 const summarizeChat = async (req, res) => {
   try {
     const { messages } = req.body;
-    const chatText = messages.map(m => `${m.sender?.name || 'User'}: ${m.content}`).join('\n');
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.json({ summary: 'No conversations found to summarize yet.' });
+    }
+
+    // Safe mapping with fallback checks to prevent server crashes
+    const chatText = messages
+      .map(m => {
+        const senderName = m.sender?.name || (m.sender === req.user._id ? 'You' : 'User');
+        return `${senderName}: ${m.content || ''}`;
+      })
+      .join('\n');
+
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'Chat summarizer. Summarize in 3-4 concise lines.' },
-        { role: 'user', content: `Summarize:\n${chatText}` }
+        { role: 'system', content: 'You are an elite conversation summarizer. Provide a bulletproof, high-vibe summary of the chat in exactly 3 clear lines. Focus on the main action items or topics discussed.' },
+        { role: 'user', content: `Summarize this chat log:\n${chatText}` }
       ],
-      max_tokens: 200,
+      max_tokens: 250,
     });
+
     res.json({ summary: completion.choices[0].message.content.trim() });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Summary controller error execution context:", error.message);
+    res.status(500).json({ message: 'AI engine timeout. Could not generate discussion metrics.' });
   }
 };
 
@@ -110,7 +126,6 @@ const correctGrammar = async (req, res) => {
   }
 };
 
-// Image generation using Pollinations AI — FREE, no API key needed
 const generateImage = async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -120,7 +135,6 @@ const generateImage = async (req, res) => {
     const seed = Math.floor(Math.random() * 1000000);
     const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&seed=${seed}&nologo=true&enhance=true`;
 
-    // Verify image is accessible
     const response = await fetch(imageUrl, { method: 'HEAD' });
     if (!response.ok) {
       return res.status(500).json({ message: 'Image generation failed. Try again.' });
