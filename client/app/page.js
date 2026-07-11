@@ -18,20 +18,38 @@ export default function Home() {
     hydrateAuth();
   }, [hydrateAuth]);
 
-  // Production-Grade PWA Service Worker Registration Loop
+  // Aggressive Service Worker Registration Hook for Mobile Chrome Compatibility
   useEffect(() => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((reg) => console.log('🚀 PWA Service Worker Registered Successfully with scope:', reg.scope))
-          .catch((err) => console.error('PWA Registration failed matrix anomaly:', err));
-      });
+      const registerSW = async () => {
+        try {
+          // Unregister any stale service workers first to clear the slate
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (let registration of registrations) {
+            await registration.unregister();
+          }
+          
+          // Register fresh service worker from public domain path
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          console.log('🚀 Mobile PWA Engine Activated Successfully:', reg.scope);
+        } catch (err) {
+          console.error('Service Worker registration crash context:', err);
+        }
+      };
+
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+        return () => window.removeEventListener('load', registerSW);
+      }
     }
   }, []);
 
-  // PWA Dynamic Install Prompt Banner Controller
+  // Capture installation hooks from android/mobile environments
   useEffect(() => {
     const handler = (e) => {
+      console.log('🎯 PWA Installation Prompt Captured By Chrome Engine');
       e.preventDefault();
       setDeferredPrompt(e);
       const dismissed = localStorage.getItem('pwa-dismissed');
@@ -46,7 +64,10 @@ export default function Home() {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') setShowPWA(false);
+    if (outcome === 'accepted') {
+      console.log('User accepted the PWA install application.');
+      setShowPWA(false);
+    }
     setDeferredPrompt(null);
   };
 
@@ -79,24 +100,23 @@ export default function Home() {
 
   return (
     <main className="flex w-screen h-screen overflow-hidden bg-[#0a0a14] relative">
-      {/* PWA Structural Alert Notification Shell */}
+      {/* PWA Floating Native Banner Trigger Overlay */}
       {showPWA && (
-        <div className="fixed bottom-4 left-4 right-4 z-[100] md:left-auto md:right-4 md:w-80 animate-fadeIn">
-          <div className="bg-[#1a1a2e] border border-purple-500/30 rounded-2xl p-4 shadow-2xl shadow-purple-500/10 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl flex-shrink-0">💬</div>
+        <div className="fixed bottom-6 left-4 right-4 z-[100] md:left-auto md:right-4 md:w-80 animate-slideUp">
+          <div className="bg-[#16162a] border-2 border-purple-500/40 rounded-3xl p-4 shadow-2xl flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl flex-shrink-0 shadow-lg shadow-purple-500/20">💬</div>
             <div className="flex-1 min-w-0">
-              <p className="text-white font-semibold text-sm">Install NexChat</p>
-              <p className="text-white/40 text-xs">Add to home screen for best experience</p>
+              <p className="text-white font-bold text-sm">Download NexChat</p>
+              <p className="text-white/40 text-[11px] leading-tight">Add to your phone workspace app screen instantly</p>
             </div>
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <button onClick={handlePWAInstall} className="bg-purple-500 hover:bg-purple-400 text-white text-xs px-3 py-1.5 rounded-xl font-bold transition-colors">Install</button>
-              <button onClick={() => { setShowPWA(false); localStorage.setItem('pwa-dismissed', 'true'); }} className="text-white/30 hover:text-white text-xs px-2 py-1 transition-colors">Later</button>
+              <button onClick={handlePWAInstall} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-2 rounded-xl font-bold transition-all shadow-md shadow-purple-600/30">Download</button>
+              <button onClick={() => { setShowPWA(false); localStorage.setItem('pwa-dismissed', 'true'); }} className="text-white/30 hover:text-white text-[10px] py-1 text-center transition-colors">Dismiss</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Layout Splitter Grid */}
       <div className="flex w-full h-full relative">
         <div className={`w-full md:w-[380px] h-full border-r border-white/5 flex-shrink-0 ${activeView === 'list' ? 'block' : 'hidden md:block'}`}>
           <Sidebar onSelectChat={() => setActiveView('chat')} />
