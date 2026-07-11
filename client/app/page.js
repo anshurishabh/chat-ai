@@ -14,12 +14,22 @@ export default function Home() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPWA, setShowPWA] = useState(false);
 
-  // Trigger hydration loop instantly on layout mount lifecycle
   useEffect(() => {
     hydrateAuth();
   }, [hydrateAuth]);
 
-  // PWA Banner Controller Implementation
+  // Production-Grade PWA Service Worker Registration Loop
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => console.log('🚀 PWA Service Worker Registered Successfully with scope:', reg.scope))
+          .catch((err) => console.error('PWA Registration failed matrix anomaly:', err));
+      });
+    }
+  }, []);
+
+  // PWA Dynamic Install Prompt Banner Controller
   useEffect(() => {
     const handler = (e) => {
       e.preventDefault();
@@ -40,7 +50,6 @@ export default function Home() {
     setDeferredPrompt(null);
   };
 
-  // View Responsive Orchestration
   useEffect(() => {
     if (selectedUser || selectedGroup || showAIChat) {
       setActiveView('chat');
@@ -56,7 +65,6 @@ export default function Home() {
     setActiveView('list');
   };
 
-  // Prevent UI flashing until Hydration check concludes safely
   if (!isHydrated) {
     return (
       <div className="w-screen h-screen bg-[#0a0a14] flex items-center justify-center">
@@ -88,14 +96,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main Responsive Layout Splitter Grid */}
+      {/* Main Layout Splitter Grid */}
       <div className="flex w-full h-full relative">
-        {/* Left Panel: Sidebar */}
         <div className={`w-full md:w-[380px] h-full border-r border-white/5 flex-shrink-0 ${activeView === 'list' ? 'block' : 'hidden md:block'}`}>
           <Sidebar onSelectChat={() => setActiveView('chat')} />
         </div>
 
-        {/* Right Panel: Workspace Window Container */}
         <div className={`flex-1 h-full relative ${activeView === 'chat' ? 'block' : 'hidden md:block'}`}>
           {showAIChat ? (
             <AIAssistant onBack={handleBackToList} />
