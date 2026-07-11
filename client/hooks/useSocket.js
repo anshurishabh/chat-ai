@@ -1,90 +1,85 @@
-
-import { useEffect, useRef } from 'react';
+'use client';
+import { useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
 
-// Dynamic production socket server link allocation logic
-const getSocketURL = () => {
-  if (typeof window !== 'undefined') {
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return 'https://nexchat-server-w5gq.onrender.com';
-    }
-  }
-  return 'http://localhost:5000';
+const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_API_URL || 'https://nexchat-server.onrender.com';
+
+let globalSocket = null;
+let callbackRegistry = {
+  onIncomingCall: null,
+  onCallEnded: null,
+  onReceiveMessage: null
 };
 
-const SOCKET_URL = getSocketURL();
-let socketInstance = null;
-
-const useSocket = () => {
+export default function useSocket() {
   const { user } = useAuthStore();
-  const { addMessage, setOnlineUsers, addTypingUser, removeTypingUser } = useChatStore();
-  const callbacksRef = useRef({});
-
+  
   useEffect(() => {
-    if (!user) return;
+    if (!user || globalSocket) return;
 
-    if (!socketInstance) {
-      socketInstance = io(SOCKET_URL, {
-        transports: ['websocket', 'polling'],
-        withCredentials: true
-      });
-    }
-
-    socketInstance.emit('user-online', user._id);
-
-    socketInstance.on('online-users', (users) => setOnlineUsers(users));
-    socketInstance.on('receive-message', (message) => addMessage(message));
-    socketInstance.on('user-typing', (userId) => addTypingUser(userId));
-    socketInstance.on('user-stop-typing', (userId) => removeTypingUser(userId));
-
-    socketInstance.on('incoming-call', (data) => {
-      if (callbacksRef.current.onIncomingCall) callbacksRef.current.onIncomingCall(data);
+    globalSocket = io(SOCKET_SERVER_URL, {
+      auth: { token: localStorage.getItem('token') },
+      transports: ['websocket', 'polling']
     });
 
-    socketInstance.on('call-accepted', (signal) => {
-      if (callbacksRef.current.onCallAccepted) callbacksRef.current.onCallAccepted(signal);
+    globalSocket.on('connect', () => {
+      console.log('⚡ Connected to socket network cloud stream node:', globalSocket.id);
+      globalSocket.emit('setupOnline', user._id);
     });
 
-    socketInstance.on('ice-candidate', (data) => {
-      if (callbacksRef.current.onIceCandidate) callbacksRef.current.onIceCandidate(data);
+    globalSocket.on('messageReceived', (newMsg) => {
+      if (callbackRegistry.onReceiveMessage) {
+        callbackRegistry.onReceiveMessage(newMsg);
+      }
     });
 
-    socketInstance.on('call-ended', () => {
-      if (callbacksRef.current.onCallEnded) callbacksRef.current.onCallEnded();
+    globalSocket.on('hey', (data) => {
+      if (callbackRegistry.onIncomingCall) {
+        callbackRegistry.onIncomingCall({
+          callerName: data.name,
+          signal: data.signal,
+          isVoiceOnly: true
+        });
+      }
+    });
+
+    globalSocket.on('callEnded', () => {
+      if (callbackRegistry.onCallEnded) callbackRegistry.onCallEnded();
     });
 
     return () => {
-      socketInstance.off('online-users');
-      socketInstance.off('receive-message');
-      socketInstance.off('user-typing');
-      socketInstance.off('user-stop-typing');
-      socketInstance.off('incoming-call');
-      socketInstance.off('call-accepted');
-      socketInstance.off('ice-candidate');
-      socketInstance.off('call-ended');
+      // Kept open across layouts switches to preserve session bindings
     };
   }, [user]);
 
-  const sendMessage = (data) => socketInstance?.emit('send-message', data);
-  const sendTyping = (data) => socketInstance?.emit('typing', data);
-  const stopTyping = (data) => socketInstance?.emit('stop-typing', data);
-  const joinGroup = (groupId) => socketInstance?.emit('join-group', groupId);
-  const callUser = (data) => socketInstance?.emit('call-user', data);
-  const answerCall = (data) => socketInstance?.emit('answer-call', data);
-  const endCall = (data) => socketInstance?.emit('end-call', data);
-  const sendIceCandidate = (data) => socketInstance?.emit('ice-candidate', data);
+  const setCallbacks = useCallback((objs) => {
+    callbackRegistry = { ...callbackRegistry, ...objs };
+  }, []);
 
-  const setCallbacks = (callbacks) => {
-    callbacksRef.current = { ...callbacksRef.current, ...callbacks };
-  };
+  const sendMessage = useCallback((payload) => {
+    globalSocket?.emit('newMessage', payload);
+  }, []);
+
+  const sendTyping = useCallback((payload) => {
+    globalSocket?.emit('typing', payload);
+  }, []);
+
+  const stopTyping = useCallback((payload) => {
+    globalSocket?.emit('stopTyping', payload);
+  }, []);
+
+  const joinGroup = useCallback((groupId) => {
+    globalSocket?.emit('joinGroup', groupId);
+  }, []);
 
   return {
-    sendMessage, sendTyping, stopTyping, joinGroup,
-    callUser, answerCall, endCall, sendIceCandidate,
-    setCallbacks, socket: socketInstance
+    socket: globalSocket,
+    sendMessage,
+    sendTyping,
+    stopTyping,
+    joinGroup,
+    setCallbacks
   };
-};
-
-export default useSocket;
+}

@@ -7,7 +7,7 @@ import useAIStore from '../store/useAIStore';
 import useSocket from '../hooks/useSocket';
 import FileUpload from './FileUpload';
 import VoiceRecorder from './VoiceRecorder';
-import VideoCall from './VideoCall';
+import VideoCall from './VideoCall'; // Acts as the unified Voice Call Interface Shell
 import MessageBubble from './MessageBubble';
 import EmojiPicker from './EmojiPicker';
 import ProfileModal from './ProfileModal';
@@ -61,7 +61,6 @@ export default function ChatWindow({ onBack }) {
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
-  // Core Real-Time Listener Synchronization Engine
   useEffect(() => {
     audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
     
@@ -69,19 +68,16 @@ export default function ChatWindow({ onBack }) {
       onIncomingCall: (data) => setIncomingCall(data),
       onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
       onReceiveMessage: (newMsg) => {
-        // Safe check to verify if the message belongs to current active window thread
         const isCurrentChat = 
           (selectedUser && (newMsg.sender._id === selectedUser._id || newMsg.sender === selectedUser._id)) ||
           (selectedGroup && newMsg.groupId === selectedGroup._id);
 
         if (isCurrentChat) {
-          // Append instantly to live chat view arrays stack without needing refresh updates
           useChatStore.setState((state) => ({
             messages: [...state.messages, newMsg]
           }));
         }
-
-        audioNotificationRef.current?.play().catch(() => console.log("Audio trigger waiting context"));
+        audioNotificationRef.current?.play().catch(() => console.log("Audio contextual alert initialized."));
       }
     });
   }, [selectedUser, selectedGroup, setCallbacks]);
@@ -94,7 +90,7 @@ export default function ChatWindow({ onBack }) {
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
-    setShowHeaderMenu(false);
+    showHeaderMenu && setShowHeaderMenu(false);
     setInput('');
     setSelfDestructMode(false);
     setSelectedLabel('');
@@ -114,7 +110,6 @@ export default function ChatWindow({ onBack }) {
       return;
     }
 
-    // Generate optimistic dynamic message object structure to update UI instantly
     const simulatedMsgId = 'opt_' + Math.random().toString(36).substr(2, 9);
     const optimisticMessage = {
       _id: simulatedMsgId,
@@ -130,7 +125,6 @@ export default function ChatWindow({ onBack }) {
       readBy: []
     };
 
-    // Render outgoing message instantly on user pane dashboard frame
     useChatStore.setState((state) => ({
       messages: [...state.messages, optimisticMessage]
     }));
@@ -140,7 +134,6 @@ export default function ChatWindow({ onBack }) {
     clearSmartReplies();
     clearReplyingTo();
 
-    // Fire network payload package to background socket pipeline channels
     sendMessage({
       sender: user._id,
       content,
@@ -265,12 +258,12 @@ export default function ChatWindow({ onBack }) {
           </div>
         </div>
 
+        {/* Action Panel — Only Voice Calling Permitted */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {selectedUser && (
-            <>
-              <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📞</button>
-              <button onClick={() => setActiveCall({ type: 'video', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📹</button>
-            </>
+            <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className={`w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 flex items-center justify-center hover:bg-purple-600/20 text-purple-400 transition-all`} title="Start Secure Voice Call">
+              📞
+            </button>
           )}
           <div className="relative">
             <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className={`w-9 h-9 rounded-full flex items-center justify-center text-xl ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>⋮</button>
@@ -296,7 +289,7 @@ export default function ChatWindow({ onBack }) {
         </div>
       </div>
 
-      {/* MESSAGES CORE VIEWPORTS */}
+      {/* MESSAGES VIEWPORTS */}
       <div className="chat-messages relative z-10 px-4 py-4 space-y-2">
         {loading && <div className="text-center py-4 text-white/30 text-sm">Loading...</div>}
         {messages.map((msg) => {
@@ -310,31 +303,7 @@ export default function ChatWindow({ onBack }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* FORWARD OVERLAY */}
-      {forwardingMsg && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#111120] border border-white/10 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-white font-bold text-sm">↩️ Forward Message To:</h3>
-              <button onClick={() => setForwardingMsg(null)} className="text-white/40 hover:text-white">✕</button>
-            </div>
-            <p className="text-xs text-white/40 mb-3 bg-white/5 p-2 rounded-xl border border-white/5 truncate">"{forwardingMsg.content}"</p>
-            <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
-              {contacts.map((contact) => (
-                <div key={contact._id} className="flex justify-between items-center p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-purple-500/10 transition-colors">
-                  <div className="flex items-center gap-2 truncate">
-                    <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold text-white uppercase">{contact.name?.charAt(0)}</div>
-                    <span className="text-white text-xs truncate">{contact.name}</span>
-                  </div>
-                  <button onClick={() => executeForward(contact._id)} className="bg-purple-500 hover:bg-purple-400 text-white text-[10px] px-3 py-1 rounded-lg font-bold transition-all">Send</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* INPUT CONTROLS AND LABELS */}
+      {/* LOWER ACTIONS INPUT SHELL */}
       <div className="chat-input relative z-10 px-4 pb-8 pt-2 backdrop-blur-xl border-t bg-[#0f0f1a]/90 border-white/5">
         <div className="flex gap-2 mb-2 overflow-x-auto pb-1 items-center">
           <span className="text-[10px] text-white/30 font-bold uppercase tracking-wider flex-shrink-0">Labels:</span>
@@ -396,7 +365,19 @@ export default function ChatWindow({ onBack }) {
       {showWallpaperPicker && <WallpaperPicker chatId={chatId} currentWallpaper={wallpaper} onSelect={(url) => { setWallpaper(url); setShowWallpaperPicker(false); }} onClose={() => setShowWallpaperPicker(false)} />}
       {showImageGenerator && <ImageGeneratorModal onSend={handleImageSend} onClose={() => setShowImageGenerator(false)} />}
       {showBlockConfirm && <ConfirmModal title={`Block ${selectedUser?.name}?`} message="They won't be able to message you." confirmText="Block" danger onConfirm={async () => { await blockUser(selectedUser._id); setShowBlockConfirm(false); }} onCancel={() => setShowBlockConfirm(false)} />}
-      {activeCall && selectedUser && <VideoCall socket={socket} currentUser={user} selectedUser={selectedUser} onClose={() => setActiveCall(null)} isIncoming={activeCall.isIncoming} incomingSignal={activeCall.signal} isVoiceOnly={activeCall.type === 'voice'} />}
+      
+      {/* Absolute Voice Execution Engine Link Layer */}
+      {activeCall && selectedUser && (
+        <VideoCall 
+          socket={socket} 
+          currentUser={user} 
+          selectedUser={selectedUser} 
+          onClose={() => setActiveCall(null)} 
+          isIncoming={activeCall.isIncoming} 
+          incomingSignal={activeCall.signal} 
+          isVoiceOnly={true} // Strict forced audio configurations parameters mapping
+        />
+      )}
     </div>
   );
 }
