@@ -173,7 +173,7 @@ export default function ChatWindow({ onBack }) {
     } catch (err) {
       console.error(err);
       setSummary("Failed to link with intelligence API server.");
-    } file {
+    } finally {
       setSummaryLoading(false);
     }
   };
