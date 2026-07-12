@@ -6,11 +6,16 @@ const onlineUsers = new Map();
 
 const socketHandler = (io) => {
   io.on('connection', (socket) => {
+    console.log('🔌 New socket connected:', socket.id);
+
     socket.on('user-online', async (data) => {
       const userId = typeof data === 'string' ? data : data.userId;
       const deviceInfo = typeof data === 'object' ? data.deviceInfo : null;
 
       onlineUsers.set(userId, socket.id);
+      console.log('✅ User online:', userId, '-> socket:', socket.id);
+      console.log('📋 Current online users map:', Array.from(onlineUsers.entries()));
+
       io.emit('online-users', Array.from(onlineUsers.keys()));
 
       if (deviceInfo) {
@@ -25,6 +30,8 @@ const socketHandler = (io) => {
           isSelfDestruct, selfDestructSeconds, replyTo,
           isForwarded, label
         } = data;
+
+        console.log('📨 send-message received. sender:', sender, 'receiver:', receiver, 'groupId:', groupId);
 
         const message = await Message.create({
           sender,
@@ -44,18 +51,23 @@ const socketHandler = (io) => {
           isScheduled: false,
         });
 
+        console.log('💾 Message saved to DB:', message._id);
+
         const populated = await message.populate([
           { path: 'sender', select: 'name avatar' },
           { path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } }
         ]);
 
         if (groupId) {
-          // Sender already joined this room, so everyone (including sender) gets it once
           io.to(groupId.toString()).emit('receive-message', populated);
+          console.log('📤 Sent to group room:', groupId);
         } else if (receiver) {
           const receiverSocketId = onlineUsers.get(receiver);
+          console.log('🔍 Looking up receiver:', receiver, '-> found socket:', receiverSocketId || 'NOT FOUND (offline)');
+
           if (receiverSocketId) {
             io.to(receiverSocketId).emit('receive-message', populated);
+            console.log('📤 Sent to receiver socket:', receiverSocketId);
           } else {
             await sendNotification(receiver, {
               title: `${populated.sender.name}`,
@@ -63,14 +75,13 @@ const socketHandler = (io) => {
               icon: '/icon-192.png',
             });
           }
-          // CRITICAL FIX: always echo back to sender's own socket too,
-          // otherwise the sender never sees their own sent message.
           socket.emit('receive-message', populated);
+          console.log('📤 Echoed back to sender socket:', socket.id);
         } else {
           socket.emit('receive-message', populated);
         }
       } catch (err) {
-        console.error('Socket message error:', err.message);
+        console.error('❌ Socket message error:', err.message);
       }
     });
 
@@ -108,13 +119,15 @@ const socketHandler = (io) => {
 
     socket.on('disconnect', () => {
       onlineUsers.forEach((socketId, userId) => {
-        if (socketId === socket.id) onlineUsers.delete(userId);
+        if (socketId === socket.id) {
+          console.log('🔴 User disconnected:', userId);
+          onlineUsers.delete(userId);
+        }
       });
       io.emit('online-users', Array.from(onlineUsers.keys()));
     });
   });
 
-  // Scheduled messages cron — har minute check karo
   setInterval(async () => {
     try {
       const now = new Date();
