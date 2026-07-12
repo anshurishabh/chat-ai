@@ -17,7 +17,7 @@ import ImageGeneratorModal from './ImageGeneratorModal';
 export default function ChatWindow({ onBack }) {
   const { user, theme } = useAuthStore();
   const {
-    selectedUser, selectedGroup, messages, getMessages, getGroupMessages,
+    selectedUser, selectedGroup, messages, setMessages, getMessages, getGroupMessages,
     typingUsers, loading, onlineUsers, contacts,
     replyTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
@@ -25,6 +25,7 @@ export default function ChatWindow({ onBack }) {
     viewProfile, viewingProfile, closeProfile,
     blockUser,
   } = useChatStore();
+  
   const { sendMessage, sendTyping, stopTyping, joinGroup, setCallbacks, socket } = useSocket();
   const { smartReplies, clearSmartReplies, translateMessage, correctGrammar, summarizeChat } = useAIStore();
 
@@ -48,7 +49,6 @@ export default function ChatWindow({ onBack }) {
   const [showImageGenerator, setShowImageGenerator] = useState(false);
   const [selfDestructMode, setSelfDestructMode] = useState(false);
   const [selfDestructSeconds, setSelfDestructSeconds] = useState(30);
-
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [selectedLabel, setSelectedLabel] = useState('');
 
@@ -60,7 +60,7 @@ export default function ChatWindow({ onBack }) {
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
-  // 1. Airtight Real-Time Event State Receiver Matrix
+  // 1. Bulletproof Socket Message Receiver Setup
   useEffect(() => {
     audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
     
@@ -70,26 +70,25 @@ export default function ChatWindow({ onBack }) {
       onReceiveMessage: (newMsg) => {
         if (!newMsg) return;
         
-        const activeChatUser = useChatStore.getState().selectedUser;
-        const activeChatGroup = useChatStore.getState().selectedGroup;
+        // Hamesha current active thread se verify karein
+        const activeUser = useChatStore.getState().selectedUser;
+        const activeGroup = useChatStore.getState().selectedGroup;
 
         const isCurrentChat = 
-          (activeChatUser && (newMsg.sender?._id === activeChatUser._id || newMsg.sender === activeChatUser._id)) ||
-          (activeChatGroup && newMsg.groupId === activeChatGroup._id);
+          (activeUser && (newMsg.sender?._id === activeUser._id || newMsg.sender === activeUser._id)) ||
+          (activeGroup && newMsg.groupId === activeGroup._id);
 
         if (isCurrentChat) {
-          useChatStore.setState((state) => {
-            if (state.messages.some(m => m._id === newMsg._id)) return state;
-            return { messages: [...state.messages, newMsg] };
-          });
+          // React state safe push pattern
+          setMessages([...useChatStore.getState().messages, newMsg]);
         }
 
         audioNotificationRef.current?.play().catch(() => {});
       }
     });
-  }, [setCallbacks]);
+  }, [selectedUser, selectedGroup, setCallbacks, setMessages]);
 
-  // 2. Clear State and Fetch Safe Histories from DB
+  // 2. Fetch fresh message history securely from DB
   useEffect(() => {
     if (selectedUser) { getMessages(selectedUser._id); getPinnedMessages(); }
     if (selectedGroup) { getGroupMessages(selectedGroup._id); getPinnedMessages(); joinGroup(selectedGroup._id); }
@@ -98,7 +97,7 @@ export default function ChatWindow({ onBack }) {
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
-    setShowHeaderMenu(false);
+    showHeaderMenu && setShowHeaderMenu(false);
     setInput('');
     setSelfDestructMode(false);
     setSelectedLabel('');
@@ -108,8 +107,8 @@ export default function ChatWindow({ onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 3. Watertight Sender Action Engine
-  const handleSend = (text, customLabel) => {
+  // 3. Absolute Core Message Dispatch Handler (Fixed Database Saving)
+  const handleSend = async (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
 
@@ -119,27 +118,7 @@ export default function ChatWindow({ onBack }) {
       return;
     }
 
-    const tempId = 'msg_' + Date.now();
-    const optimisticMessage = {
-      _id: tempId,
-      sender: { _id: user._id, name: user.name, avatar: user.avatar },
-      content,
-      type: 'text',
-      receiver: selectedUser?._id || null,
-      groupId: selectedGroup?._id || null,
-      replyTo: replyTo?._id || null,
-      isSelfDestruct: selfDestructMode,
-      selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
-      label: customLabel || selectedLabel || null,
-      createdAt: new Date().toISOString(),
-      readBy: []
-    };
-
-    useChatStore.setState((state) => ({
-      messages: [...state.messages, optimisticMessage]
-    }));
-
-    sendMessage({
+    const msgPayload = {
       sender: user._id,
       content,
       type: 'text',
@@ -149,22 +128,26 @@ export default function ChatWindow({ onBack }) {
       isSelfDestruct: selfDestructMode,
       selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
       label: customLabel || selectedLabel || null
-    });
+    };
+
+    // Socket network event ko hit karein jo MongoDB backend me data insert karega
+    sendMessage(msgPayload);
 
     setInput('');
     setSelectedLabel('');
     clearSmartReplies();
     clearReplyingTo();
 
+    // Database instant handshake updates taaki screen par message load ho jaye
     setTimeout(() => {
       if (selectedUser) getMessages(selectedUser._id);
       if (selectedGroup) getGroupMessages(selectedGroup._id);
-    }, 400);
+    }, 300);
   };
 
   const handleTriggerSummary = async () => {
     try {
-      showHeaderMenu && setShowHeaderMenu(false);
+      setShowHeaderMenu(false);
       setSummaryLoading(true);
       setSummary('');
       setShowSummary(true);
@@ -200,6 +183,7 @@ export default function ChatWindow({ onBack }) {
       receiver: selectedUser?._id || null,
       groupId: selectedGroup?._id || null,
     });
+    setTimeout(() => { if (selectedUser) getMessages(selectedUser._id); }, 400);
   };
 
   const handleFileUpload = (fileData) => {
@@ -213,6 +197,7 @@ export default function ChatWindow({ onBack }) {
       replyTo: replyTo?._id || null,
     });
     clearReplyingTo();
+    setTimeout(() => { if (selectedUser) getMessages(selectedUser._id); }, 400);
   };
 
   const handleTyping = (e) => {
@@ -268,12 +253,12 @@ export default function ChatWindow({ onBack }) {
           </div>
         </div>
 
-        {/* Dynamic Voice Call Only Layout Configuration */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {selectedUser && (
-            <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>
-              📞
-            </button>
+            <>
+              <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📞</button>
+              <button onClick={() => setActiveCall({ type: 'video', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📹</button>
+            </>
           )}
           <div className="relative">
             <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className={`w-9 h-9 rounded-full flex items-center justify-center text-xl ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>⋮</button>
@@ -396,12 +381,12 @@ export default function ChatWindow({ onBack }) {
               </div>
               <div>
                 <p className="text-white font-semibold">{incomingCall.callerName}</p>
-                <p className="text-white/40 text-xs">Incoming voice call...</p>
+                <p className="text-white/40 text-xs">Incoming call...</p>
               </div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => setIncomingCall(null)} className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center text-2xl">📵</button>
-              <button onClick={() => { setActiveCall({ type: 'voice', isIncoming: true, signal: incomingCall.signal }); setIncomingCall(null); }} className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-2xl animate-bounce">📞</button>
+              <button onClick={() => { setActiveCall({ type: incomingCall.isVoiceOnly ? 'voice' : 'video', isIncoming: true, signal: incomingCall.signal }); setIncomingCall(null); }} className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-2xl animate-bounce">📞</button>
             </div>
           </div>
         </div>
@@ -514,7 +499,7 @@ export default function ChatWindow({ onBack }) {
       {showWallpaperPicker && <WallpaperPicker chatId={chatId} currentWallpaper={wallpaper} onSelect={(url) => { setWallpaper(url); setShowWallpaperPicker(false); }} onClose={() => setShowWallpaperPicker(false)} />}
       {showImageGenerator && <ImageGeneratorModal onSend={handleImageSend} onClose={() => setShowImageGenerator(false)} />}
       {showBlockConfirm && <ConfirmModal title={`Block ${selectedUser?.name}?`} message="They won't be able to message you." confirmText="Block" danger onConfirm={async () => { await blockUser(selectedUser._id); setShowBlockConfirm(false); }} onCancel={() => setShowBlockConfirm(false)} />}
-      {activeCall && selectedUser && <VideoCall socket={socket} currentUser={user} selectedUser={selectedUser} onClose={() => setActiveCall(null)} isIncoming={activeCall.isIncoming} incomingSignal={activeCall.signal} isVoiceOnly={true} />}
+      {activeCall && selectedUser && <VideoCall socket={socket} currentUser={user} selectedUser={selectedUser} onClose={() => setActiveCall(null)} isIncoming={activeCall.isIncoming} incomingSignal={activeCall.signal} isVoiceOnly={activeCall.type === 'voice'} />}
     </div>
   );
 }
