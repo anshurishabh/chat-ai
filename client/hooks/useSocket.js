@@ -1,3 +1,4 @@
+
 'use client';
 import { useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
@@ -26,32 +27,40 @@ export default function useSocket() {
 
     globalSocket.on('connect', () => {
       console.log('⚡ Connected to socket network cloud stream node:', globalSocket.id);
-      globalSocket.emit('setupOnline', user._id);
+      globalSocket.emit('user-online', user._id);
     });
 
-    globalSocket.on('messageReceived', (newMsg) => {
+    // Event matches backend 'receive-message' perfectly now
+    globalSocket.on('receive-message', (newMsg) => {
       if (callbackRegistry.onReceiveMessage) {
         callbackRegistry.onReceiveMessage(newMsg);
       }
     });
 
-    globalSocket.on('hey', (data) => {
+    // Event matches backend 'incoming-call' perfectly now
+    globalSocket.on('incoming-call', (data) => {
       if (callbackRegistry.onIncomingCall) {
         callbackRegistry.onIncomingCall({
-          callerName: data.name,
+          callerName: data.callerName,
           signal: data.signal,
-          isVoiceOnly: true
+          from: data.from,
+          isVoiceOnly: data.isVoiceOnly
         });
       }
     });
 
-    globalSocket.on('callEnded', () => {
+    globalSocket.on('call-accepted', (signal) => {
+      const socketRegistry = globalSocket;
+      if (socketRegistry) {
+        socketRegistry.emit('callAccepted_fallback', signal);
+      }
+    });
+
+    globalSocket.on('call-ended', () => {
       if (callbackRegistry.onCallEnded) callbackRegistry.onCallEnded();
     });
 
-    return () => {
-      // Kept open across layouts switches to preserve session bindings
-    };
+    return () => {};
   }, [user]);
 
   const setCallbacks = useCallback((objs) => {
@@ -59,26 +68,26 @@ export default function useSocket() {
   }, []);
 
   const sendMessage = useCallback((payload) => {
-    globalSocket?.emit('newMessage', payload);
+    globalSocket?.emit('send-message', payload);
   }, []);
 
   const sendTyping = useCallback((payload) => {
     globalSocket?.emit('typing', payload);
   }, []);
 
-  const stopTyping = useCallback((payload) => {
-    globalSocket?.emit('stopTyping', payload);
+  const deleteMessage = useCallback((payload) => {
+    globalSocket?.emit('stop-typing', payload);
   }, []);
 
   const joinGroup = useCallback((groupId) => {
-    globalSocket?.emit('joinGroup', groupId);
+    globalSocket?.emit('join-group', groupId);
   }, []);
 
   return {
     socket: globalSocket,
     sendMessage,
     sendTyping,
-    stopTyping,
+    stopTyping: deleteMessage,
     joinGroup,
     setCallbacks
   };

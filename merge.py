@@ -23,3 +23,5 @@ with open("all_code.txt", "w", encoding="utf-8") as outfile:
                     outfile.write(f"[Could not read file {file}: {e}]")
 
 print("Saara code 'all_code.txt' mein save ho gaya hai!")
+
+# python merge.py
