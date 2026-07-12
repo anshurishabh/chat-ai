@@ -60,7 +60,7 @@ export default function ChatWindow({ onBack }) {
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
-  // 1. Bulletproof Socket Message Receiver Setup
+  // 1. Core Socket Messages Synchronization Setup
   useEffect(() => {
     audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
     
@@ -70,25 +70,30 @@ export default function ChatWindow({ onBack }) {
       onReceiveMessage: (newMsg) => {
         if (!newMsg) return;
         
-        // Hamesha current active thread se verify karein
         const activeUser = useChatStore.getState().selectedUser;
         const activeGroup = useChatStore.getState().selectedGroup;
 
         const isCurrentChat = 
-          (activeUser && (newMsg.sender?._id === activeUser._id || newMsg.sender === activeUser._id)) ||
+          (activeUser && (newMsg.sender?._id === activeUser._id || newMsg.sender === activeUser._id || newMsg.receiver === user._id)) ||
           (activeGroup && newMsg.groupId === activeGroup._id);
 
         if (isCurrentChat) {
-          // React state safe push pattern
-          setMessages([...useChatStore.getState().messages, newMsg]);
+          const currentMsgs = useChatStore.getState().messages;
+          const exists = currentMsgs.some(m => m._id === newMsg._id || (m.content === newMsg.content && m.sender?._id === newMsg.sender?._id));
+          
+          if (!exists) {
+            // Remove temp placeholders and mount real socket delivery packet
+            const filtered = currentMsgs.filter(m => !m._id.startsWith('temp-'));
+            setMessages([...filtered, newMsg]);
+          }
         }
 
         audioNotificationRef.current?.play().catch(() => {});
       }
     });
-  }, [selectedUser, selectedGroup, setCallbacks, setMessages]);
+  }, [selectedUser, selectedGroup, setCallbacks, setMessages, user._id]);
 
-  // 2. Fetch fresh message history securely from DB
+  // 2. Fetch Records Securely from DB
   useEffect(() => {
     if (selectedUser) { getMessages(selectedUser._id); getPinnedMessages(); }
     if (selectedGroup) { getGroupMessages(selectedGroup._id); getPinnedMessages(); joinGroup(selectedGroup._id); }
@@ -97,7 +102,7 @@ export default function ChatWindow({ onBack }) {
     setSummary('');
     setShowSummary(false);
     setShowPinnedBar(false);
-    showHeaderMenu && setShowHeaderMenu(false);
+    setShowHeaderMenu(false);
     setInput('');
     setSelfDestructMode(false);
     setSelectedLabel('');
@@ -107,7 +112,7 @@ export default function ChatWindow({ onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 3. Absolute Core Message Dispatch Handler (Fixed Database Saving)
+  // 3. Robust Airtight Message Dispatch Handler
   const handleSend = async (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
@@ -118,7 +123,26 @@ export default function ChatWindow({ onBack }) {
       return;
     }
 
-    const msgPayload = {
+    const tempId = 'temp-' + Date.now();
+    const optimisticMessage = {
+      _id: tempId,
+      sender: { _id: user._id, name: user.name, avatar: user.avatar },
+      content: content,
+      type: 'text',
+      receiver: selectedUser?._id || null,
+      groupId: selectedGroup?._id || null,
+      replyTo: replyTo || null,
+      isSelfDestruct: selfDestructMode,
+      selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
+      label: customLabel || selectedLabel || null,
+      createdAt: new Date().toISOString(),
+      readBy: []
+    };
+
+    // UI stability fix: Locally update array list before pipeline triggers network payload
+    setMessages([...useChatStore.getState().messages, optimisticMessage]);
+
+    sendMessage({
       sender: user._id,
       content,
       type: 'text',
@@ -128,21 +152,17 @@ export default function ChatWindow({ onBack }) {
       isSelfDestruct: selfDestructMode,
       selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
       label: customLabel || selectedLabel || null
-    };
-
-    // Socket network event ko hit karein jo MongoDB backend me data insert karega
-    sendMessage(msgPayload);
+    });
 
     setInput('');
     setSelectedLabel('');
     clearSmartReplies();
     clearReplyingTo();
 
-    // Database instant handshake updates taaki screen par message load ho jaye
     setTimeout(() => {
       if (selectedUser) getMessages(selectedUser._id);
       if (selectedGroup) getGroupMessages(selectedGroup._id);
-    }, 300);
+    }, 400);
   };
 
   const handleTriggerSummary = async () => {
