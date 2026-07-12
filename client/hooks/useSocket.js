@@ -1,11 +1,26 @@
-
 'use client';
 import { useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import useAuthStore from '../store/useAuthStore';
 import useChatStore from '../store/useChatStore';
 
-const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_API_URL || 'https://nexchat-server.onrender.com';
+const getSocketURL = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+
+    // Production (Vercel) — same backend as axios.js uses
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.startsWith('192.168.') && !hostname.startsWith('10.')) {
+      return 'https://nexchat-server-w5gq.onrender.com';
+    }
+
+    // Mobile local testing (laptop IP used on phone)
+    if (hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
+      return `http://${hostname}:5000`;
+    }
+  }
+  // Local fallback
+  return 'http://localhost:5000';
+};
 
 let globalSocket = null;
 let callbackRegistry = {
@@ -20,7 +35,7 @@ export default function useSocket() {
   useEffect(() => {
     if (!user || globalSocket) return;
 
-    globalSocket = io(SOCKET_SERVER_URL, {
+    globalSocket = io(getSocketURL(), {
       auth: { token: localStorage.getItem('token') },
       transports: ['websocket', 'polling']
     });
@@ -28,6 +43,10 @@ export default function useSocket() {
     globalSocket.on('connect', () => {
       console.log('⚡ Connected to socket network cloud stream node:', globalSocket.id);
       globalSocket.emit('user-online', user._id);
+    });
+
+    globalSocket.on('connect_error', (err) => {
+      console.error('❌ Socket connection failed:', err.message);
     });
 
     // Event matches backend 'receive-message' perfectly now
