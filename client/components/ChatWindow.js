@@ -17,7 +17,7 @@ import ImageGeneratorModal from './ImageGeneratorModal';
 export default function ChatWindow({ onBack }) {
   const { user, theme } = useAuthStore();
   const {
-    selectedUser, selectedGroup, messages, setMessages, getMessages, getGroupMessages,
+    selectedUser, selectedGroup, messages, getMessages, getGroupMessages,
     typingUsers, loading, onlineUsers, contacts,
     replyTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
@@ -60,40 +60,24 @@ export default function ChatWindow({ onBack }) {
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
-  // 1. Core Socket Messages Synchronization Setup
+  // BACK TO ORIGINAL: Standard original simple sockets callbacks
   useEffect(() => {
     audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
     
     setCallbacks({
       onIncomingCall: (data) => setIncomingCall(data),
       onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
-      onReceiveMessage: (newMsg) => {
-        if (!newMsg) return;
-        
-        const activeUser = useChatStore.getState().selectedUser;
-        const activeGroup = useChatStore.getState().selectedGroup;
-
-        const isCurrentChat = 
-          (activeUser && (newMsg.sender?._id === activeUser._id || newMsg.sender === activeUser._id || newMsg.receiver === user._id)) ||
-          (activeGroup && newMsg.groupId === activeGroup._id);
-
-        if (isCurrentChat) {
-          const currentMsgs = useChatStore.getState().messages;
-          const exists = currentMsgs.some(m => m._id === newMsg._id || (m.content === newMsg.content && m.sender?._id === newMsg.sender?._id));
-          
-          if (!exists) {
-            // Remove temp placeholders and mount real socket delivery packet
-            const filtered = currentMsgs.filter(m => !m._id.startsWith('temp-'));
-            setMessages([...filtered, newMsg]);
-          }
-        }
-
+      onReceiveMessage: () => {
+        // Sirf sound notification bajega pehle ki tarah
         audioNotificationRef.current?.play().catch(() => {});
+        // Refresh fallback to update database lists context automatically
+        if (selectedUser) getMessages(selectedUser._id);
+        if (selectedGroup) getGroupMessages(selectedGroup._id);
       }
     });
-  }, [selectedUser, selectedGroup, setCallbacks, setMessages, user._id]);
+  }, [selectedUser, selectedGroup, setCallbacks]);
 
-  // 2. Fetch Records Securely from DB
+  // Original secure logic to load database logs instantly
   useEffect(() => {
     if (selectedUser) { getMessages(selectedUser._id); getPinnedMessages(); }
     if (selectedGroup) { getGroupMessages(selectedGroup._id); getPinnedMessages(); joinGroup(selectedGroup._id); }
@@ -112,8 +96,8 @@ export default function ChatWindow({ onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 3. Robust Airtight Message Dispatch Handler
-  const handleSend = async (text, customLabel) => {
+  // BACK TO ORIGINAL SIMPLE SENDUP: Input parameters clear out immediately
+  const handleSend = (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
 
@@ -123,25 +107,7 @@ export default function ChatWindow({ onBack }) {
       return;
     }
 
-    const tempId = 'temp-' + Date.now();
-    const optimisticMessage = {
-      _id: tempId,
-      sender: { _id: user._id, name: user.name, avatar: user.avatar },
-      content: content,
-      type: 'text',
-      receiver: selectedUser?._id || null,
-      groupId: selectedGroup?._id || null,
-      replyTo: replyTo || null,
-      isSelfDestruct: selfDestructMode,
-      selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
-      label: customLabel || selectedLabel || null,
-      createdAt: new Date().toISOString(),
-      readBy: []
-    };
-
-    // UI stability fix: Locally update array list before pipeline triggers network payload
-    setMessages([...useChatStore.getState().messages, optimisticMessage]);
-
+    // Direct solid socket broadcast framework
     sendMessage({
       sender: user._id,
       content,
@@ -159,6 +125,7 @@ export default function ChatWindow({ onBack }) {
     clearSmartReplies();
     clearReplyingTo();
 
+    // Direct database reload after transmission handshake delay
     setTimeout(() => {
       if (selectedUser) getMessages(selectedUser._id);
       if (selectedGroup) getGroupMessages(selectedGroup._id);
