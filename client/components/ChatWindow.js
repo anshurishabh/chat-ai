@@ -1,4 +1,3 @@
-
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import useChatStore from '../store/useChatStore';
@@ -22,26 +21,18 @@ export default function ChatWindow({ onBack }) {
     typingUsers, loading, onlineUsers, contacts,
     replyTo, clearReplyingTo,
     pinnedMessages, getPinnedMessages,
-    showMsgSearch, toggleMsgSearch, msgSearchQuery, msgSearchResults, searchMessages,
+    showMsgSearch, toggleMsgSearch,
     viewProfile, viewingProfile, closeProfile,
     blockUser,
   } = useChatStore();
+  
   const { sendMessage, sendTyping, stopTyping, joinGroup, setCallbacks, socket } = useSocket();
-  const { smartReplies, clearSmartReplies, translateMessage, correctGrammar, summarizeChat } = useAIStore();
+  const { clearSmartReplies, correctGrammar, summarizeChat } = useAIStore();
 
   const [input, setInput] = useState('');
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showTranslate, setShowTranslate] = useState(false);
-  const [translateLang, setTranslateLang] = useState('Hindi');
-  const [translatedMsg, setTranslatedMsg] = useState('');
-  const [showSummary, setShowSummary] = useState(false);
-  const [summary, setSummary] = useState('');
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [showPinnedBar, setShowPinnedBar] = useState(false);
-  const [incomingCall, setIncomingCall] = useState(null);
-  const [activeCall, setActiveCall] = useState(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
   const [wallpaper, setWallpaper] = useState('');
@@ -49,7 +40,6 @@ export default function ChatWindow({ onBack }) {
   const [showImageGenerator, setShowImageGenerator] = useState(false);
   const [selfDestructMode, setSelfDestructMode] = useState(false);
   const [selfDestructSeconds, setSelfDestructSeconds] = useState(30);
-
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [selectedLabel, setSelectedLabel] = useState('');
 
@@ -58,52 +48,70 @@ export default function ChatWindow({ onBack }) {
   const messageRefs = useRef({});
   const audioNotificationRef = useRef(null);
   
-  const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
-  // Core Real-Time Listener Synchronization Engine
+  // 1. Core Real-Time Incoming Message Synchronization Engine
   useEffect(() => {
-    audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
+    // Standard secure audio context check
+    if (typeof window !== 'undefined') {
+      audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
+    }
     
     setCallbacks({
-      onIncomingCall: (data) => setIncomingCall(data),
-      onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
+      onIncomingCall: () => {},
+      onCallEnded: () => {},
       onReceiveMessage: (newMsg) => {
-        // Safe check to verify if the message belongs to current active window thread
+        if (!newMsg || !newMsg.sender) return;
+
+        // Verify if message belongs to the currently active UI chat window
+        const activeChatUser = useChatStore.getState().selectedUser;
+        const activeChatGroup = useChatStore.getState().selectedGroup;
+
         const isCurrentChat = 
-          (selectedUser && (newMsg.sender._id === selectedUser._id || newMsg.sender === selectedUser._id)) ||
-          (selectedGroup && newMsg.groupId === selectedGroup._id);
+          (activeChatUser && (newMsg.sender._id === activeChatUser._id || newMsg.sender === activeChatUser._id)) ||
+          (activeChatGroup && newMsg.groupId === activeChatGroup._id);
 
         if (isCurrentChat) {
-          // Append instantly to live chat view arrays stack without needing refresh updates
-          useChatStore.setState((state) => ({
-            messages: [...state.messages, newMsg]
-          }));
+          // SAFE UPDATE: Append to running messages array state dynamically
+          useChatStore.setState((state) => {
+            // Prevent duplicate renderings if message already exists in local array
+            if (state.messages.some(m => m._id === newMsg._id)) return state;
+            return { messages: [...state.messages, newMsg] };
+          });
         }
 
-        audioNotificationRef.current?.play().catch(() => console.log("Audio trigger waiting context"));
+        // Trigger dynamic sound notification
+        if (audioNotificationRef.current) {
+          audioNotificationRef.current.play().catch(() => {});
+        }
       }
     });
-  }, [selectedUser, selectedGroup, setCallbacks]);
+  }, [setCallbacks]);
 
+  // 2. Fetch Fresh Records from Database on Switch Chat Thread
   useEffect(() => {
-    if (selectedUser) { getMessages(selectedUser._id); getPinnedMessages(); }
-    if (selectedGroup) { getGroupMessages(selectedGroup._id); getPinnedMessages(); joinGroup(selectedGroup._id); }
+    if (selectedUser) { 
+      getMessages(selectedUser._id); 
+      getPinnedMessages(); 
+    }
+    if (selectedGroup) { 
+      getGroupMessages(selectedGroup._id); 
+      getPinnedMessages(); 
+      joinGroup(selectedGroup._id); 
+    }
     clearSmartReplies();
     clearReplyingTo();
-    setSummary('');
-    setShowSummary(false);
-    setShowPinnedBar(false);
-    setShowHeaderMenu(false);
     setInput('');
     setSelfDestructMode(false);
     setSelectedLabel('');
   }, [selectedUser, selectedGroup]);
 
+  // Auto Scroll Engine Layer
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // 3. Perfect Handshake Send Logic
   const handleSend = async (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
@@ -114,10 +122,10 @@ export default function ChatWindow({ onBack }) {
       return;
     }
 
-    // Generate optimistic dynamic message object structure to update UI instantly
-    const simulatedMsgId = 'opt_' + Math.random().toString(36).substr(2, 9);
+    // Temporary absolute tracking block ID
+    const tempId = 'msg_' + Date.now();
     const optimisticMessage = {
-      _id: simulatedMsgId,
+      _id: tempId,
       sender: { _id: user._id, name: user.name, avatar: user.avatar },
       content: content,
       type: 'text',
@@ -130,7 +138,7 @@ export default function ChatWindow({ onBack }) {
       readBy: []
     };
 
-    // Render outgoing message instantly on user pane dashboard frame
+    // Render instantly to UI so user feels ultra-fast response speed
     useChatStore.setState((state) => ({
       messages: [...state.messages, optimisticMessage]
     }));
@@ -140,71 +148,30 @@ export default function ChatWindow({ onBack }) {
     clearSmartReplies();
     clearReplyingTo();
 
-    // Fire network payload package to background socket pipeline channels
-    sendMessage({
-      sender: user._id,
-      content,
-      type: 'text',
-      receiver: selectedUser?._id || null,
-      groupId: selectedGroup?._id || null,
-      replyTo: replyTo?._id || null,
-      isSelfDestruct: selfDestructMode,
-      selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
-      label: customLabel || selectedLabel || null
-    });
-  };
-
-  const handleTriggerSummary = async () => {
     try {
-      setShowHeaderMenu(false);
-      setSummaryLoading(true);
-      setSummary('');
-      setShowSummary(true);
-      const s = await summarizeChat(messages);
-      setSummary(s || "Could not generate transaction text logs summary.");
+      // Fire network payload package to background socket channels
+      // Socket server will save this to MongoDB database and broadcast to receiver node
+      sendMessage({
+        sender: user._id,
+        content,
+        type: 'text',
+        receiver: selectedUser?._id || null,
+        groupId: selectedGroup?._id || null,
+        replyTo: replyTo?._id || null,
+        isSelfDestruct: selfDestructMode,
+        selfDestructSeconds: selfDestructMode ? selfDestructSeconds : null,
+        label: customLabel || selectedLabel || null
+      });
+
+      // Optional: Refetch after 800ms to ensure database state is perfectly synced
+      setTimeout(() => {
+        if (selectedUser) getMessages(selectedUser._id);
+        if (selectedGroup) getGroupMessages(selectedGroup._id);
+      }, 800);
+
     } catch (err) {
-      console.error(err);
-      setSummary("Failed to link with intelligence API server.");
-    } finally {
-      setSummaryLoading(false);
+      console.error("Failed to safely dispatch packet via network layers:", err);
     }
-  };
-
-  const executeForward = async (targetContactId) => {
-    if (!forwardingMsg) return;
-    await sendMessage({
-      sender: user._id,
-      content: forwardingMsg.content,
-      type: forwardingMsg.type || 'text',
-      fileUrl: forwardingMsg.fileUrl || '',
-      receiver: targetContactId,
-      isForwarded: true
-    });
-    setForwardingMsg(null);
-  };
-
-  const handleImageSend = (imageData) => {
-    sendMessage({
-      sender: user._id,
-      content: `🎨 ${imageData.prompt}`,
-      type: 'image',
-      fileUrl: imageData.imageUrl,
-      receiver: selectedUser?._id || null,
-      groupId: selectedGroup?._id || null,
-    });
-  };
-
-  const handleFileUpload = (fileData) => {
-    sendMessage({
-      sender: user._id,
-      content: fileData.originalName || 'File',
-      type: fileData.type === 'image' ? 'image' : fileData.type === 'video' ? 'video' : fileData.type === 'audio' ? 'audio' : 'pdf',
-      fileUrl: fileData.url,
-      receiver: selectedUser?._id || null,
-      groupId: selectedGroup?._id || null,
-      replyTo: replyTo?._id || null,
-    });
-    clearReplyingTo();
   };
 
   const handleTyping = (e) => {
@@ -217,16 +184,16 @@ export default function ChatWindow({ onBack }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    if (e.key === 'Escape' && replyTo) clearReplyingTo();
+    if (e.key === 'Enter' && !e.shiftKey) { 
+      e.preventDefault(); 
+      handleSend(); 
+    }
   };
 
   const scrollToMessage = (messageId) => {
     const el = messageRefs.current[messageId];
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-purple-400', 'rounded-2xl');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-purple-400', 'rounded-2xl'), 1500);
     }
   };
 
@@ -234,9 +201,7 @@ export default function ChatWindow({ onBack }) {
   const isGroup = !!selectedGroup;
 
   const bgStyle = wallpaper
-    ? wallpaper.startsWith('url(')
-      ? { backgroundImage: wallpaper, backgroundSize: 'cover', backgroundPosition: 'center' }
-      : { background: wallpaper }
+    ? wallpaper.startsWith('url(') ? { backgroundImage: wallpaper, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: wallpaper }
     : { background: isLight ? '#f0f2f5' : '#0a0a14' };
 
   return (
@@ -245,60 +210,30 @@ export default function ChatWindow({ onBack }) {
 
       {/* HEADER */}
       <div className={`chat-header relative z-10 px-4 pt-12 pb-3 flex items-center gap-3 backdrop-blur-xl border-b ${isLight ? 'bg-white/95 border-gray-200' : 'bg-[#1a0a2e]/95 border-white/10'}`}>
-        <button onClick={onBack} className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isLight ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-white/10 hover:bg-white/20 text-white'}`}>←</button>
-
-        <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={() => selectedUser && viewProfile(selectedUser._id)}>
-          <div className="w-10 h-10 rounded-2xl overflow-hidden flex-shrink-0">
-            {selectedUser?.avatar
-              ? <img src={selectedUser.avatar} alt="avatar" className="w-full h-full object-cover" />
-              : <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold">{chatName?.charAt(0).toUpperCase()}</div>
-            }
+        <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white">←</button>
+        <div className="flex items-center gap-3 flex-1 min-w-0" onClick={() => selectedUser && viewProfile(selectedUser._id)}>
+          <div className="w-10 h-10 rounded-2xl overflow-hidden bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold">
+            {chatName?.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className={`font-semibold text-sm truncate ${isLight ? 'text-gray-900' : 'text-white'}`}>{chatName}</p>
-            {typingUsers.length > 0
-              ? <p className="text-green-500 text-xs animate-pulse">typing...</p>
-              : <p className={`text-xs ${isLight ? 'text-gray-500' : 'text-white/40'}`}>
-                  {selectedUser ? (onlineUsers?.includes(selectedUser._id) ? '🟢 online' : 'offline') : `${selectedGroup?.members?.length} members`}
-                </p>
-            }
+            <p className="font-semibold text-sm truncate text-white">{chatName}</p>
+            <p className="text-xs text-white/40">
+              {selectedUser ? (onlineUsers?.includes(selectedUser._id) ? '🟢 online' : 'offline') : `${selectedGroup?.members?.length} members`}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {selectedUser && (
-            <>
-              <button onClick={() => setActiveCall({ type: 'voice', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📞</button>
-              <button onClick={() => setActiveCall({ type: 'video', isIncoming: false })} className={`w-9 h-9 rounded-full flex items-center justify-center ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>📹</button>
-            </>
+            <button onClick={() => useChatStore.setState({ activeCall: { type: 'voice', isIncoming: false } })} className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 hover:bg-purple-600/20">📞</button>
           )}
-          <div className="relative">
-            <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className={`w-9 h-9 rounded-full flex items-center justify-center text-xl ${isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-white/10 text-white/60'}`}>⋮</button>
-            {showHeaderMenu && (
-              <div className={`absolute right-0 top-11 w-48 rounded-2xl shadow-2xl z-30 overflow-hidden border ${isLight ? 'bg-white border-gray-200' : 'bg-[#1e1e30] border-white/10'}`}>
-                {[
-                  selectedUser && { label: '👤 Profile', action: () => { viewProfile(selectedUser._id); setShowHeaderMenu(false); } },
-                  { label: '🎨 Wallpaper', action: () => { setShowWallpaperPicker(true); setShowHeaderMenu(false); } },
-                  { label: '🖼️ AI Image', action: () => { setShowImageGenerator(true); setShowHeaderMenu(false); }, color: 'text-purple-400' },
-                  { label: '📝 Summary', action: handleTriggerSummary },
-                  { label: '🔍 Search', action: () => { toggleMsgSearch(); setShowHeaderMenu(false); } },
-                  { label: '📌 Pinned', action: () => { setShowPinnedBar(!showPinnedBar); setShowHeaderMenu(false); } },
-                  { label: `💣 ${selfDestructMode ? '✅ ' : ''}Self-Destruct`, action: () => { setSelfDestructMode(!selfDestructMode); setShowHeaderMenu(false); }, color: selfDestructMode ? 'text-red-400' : '' },
-                  selectedUser && { label: '🚫 Block', action: () => { setShowBlockConfirm(true); setShowHeaderMenu(false); }, color: 'text-red-400' },
-                ].filter(Boolean).map((item, i) => (
-                  <button key={i} onClick={item.action} className={`w-full text-left px-4 py-3 text-sm transition-colors ${isLight ? 'hover:bg-gray-50 text-gray-700' : 'hover:bg-white/5 text-white'} ${item.color || ''}`}>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="w-9 h-9 rounded-full flex items-center justify-center text-xl text-white/60 hover:bg-white/10">⋮</button>
         </div>
       </div>
 
-      {/* MESSAGES CORE VIEWPORTS */}
-      <div className="chat-messages relative z-10 px-4 py-4 space-y-2">
-        {loading && <div className="text-center py-4 text-white/30 text-sm">Loading...</div>}
+      {/* MESSAGES LAYER MAP */}
+      <div className="chat-messages relative z-10 px-4 py-4 space-y-2 overflow-y-auto h-[calc(100vh-180px)]">
+        {loading && <div className="text-center py-4 text-white/30 text-sm">Synchronizing Database Cloud...</div>}
         {messages.map((msg) => {
           const isMe = msg.sender?._id === user._id || msg.sender === user._id;
           return (
@@ -310,93 +245,33 @@ export default function ChatWindow({ onBack }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* FORWARD OVERLAY */}
-      {forwardingMsg && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#111120] border border-white/10 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-white font-bold text-sm">↩️ Forward Message To:</h3>
-              <button onClick={() => setForwardingMsg(null)} className="text-white/40 hover:text-white">✕</button>
-            </div>
-            <p className="text-xs text-white/40 mb-3 bg-white/5 p-2 rounded-xl border border-white/5 truncate">"{forwardingMsg.content}"</p>
-            <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
-              {contacts.map((contact) => (
-                <div key={contact._id} className="flex justify-between items-center p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-purple-500/10 transition-colors">
-                  <div className="flex items-center gap-2 truncate">
-                    <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold text-white uppercase">{contact.name?.charAt(0)}</div>
-                    <span className="text-white text-xs truncate">{contact.name}</span>
-                  </div>
-                  <button onClick={() => executeForward(contact._id)} className="bg-purple-500 hover:bg-purple-400 text-white text-[10px] px-3 py-1 rounded-lg font-bold transition-all">Send</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* INPUT CONTROLS AND LABELS */}
+      {/* INPUT CONTROLS ACCENT BAR */}
       <div className="chat-input relative z-10 px-4 pb-8 pt-2 backdrop-blur-xl border-t bg-[#0f0f1a]/90 border-white/5">
         <div className="flex gap-2 mb-2 overflow-x-auto pb-1 items-center">
-          <span className="text-[10px] text-white/30 font-bold uppercase tracking-wider flex-shrink-0">Labels:</span>
-          {['Work', 'Urgent', 'Personal', 'Important'].map((labelName) => (
-            <button
-              key={labelName}
-              onClick={() => setSelectedLabel(selectedLabel === labelName ? '' : labelName)}
-              className={`text-[10px] px-2.5 py-1 rounded-md font-bold transition-all border ${
-                selectedLabel === labelName 
-                  ? 'bg-purple-600 border-purple-400 text-white shadow-md shadow-purple-500/20' 
-                  : 'bg-white/5 border-white/10 text-white/50 hover:border-white/20'
-              }`}
-            >
-              🏷️ {labelName}
-            </button>
-          ))}
-          
-          <div className="h-4 w-px bg-white/10 mx-1 flex-shrink-0" />
-
-          {[
-            { label: '✨ Grammar', action: async () => { if (!input.trim()) return; const c = await correctGrammar(input); setInput(c); } },
-            { label: '🌍 Translate', action: () => setShowTranslate(!showTranslate), active: showTranslate },
-            { label: '🎨 /imagine', action: () => setShowImageGenerator(true), color: true },
-          ].map((tool) => (
-            <button key={tool.label} onClick={tool.action} className={`whitespace-nowrap text-[10px] px-3 py-1 rounded-full border flex-shrink-0 ${
-              tool.color ? 'border-purple-500/50 text-purple-400 bg-purple-500/10' :
-              tool.active ? 'border-purple-400 text-purple-300 bg-purple-500/20' :
-              'border-white/10 text-white/40 hover:border-purple-400 hover:text-white'
-            }`}>
-              {tool.label}
-            </button>
+          <span className="text-[10px] text-white/30 font-bold uppercase tracking-wider flex-shrink-0">AI Pipeline:</span>
+          {['Urgent', 'Work', 'Personal'].map((l) => (
+            <button key={l} onClick={() => setSelectedLabel(selectedLabel === l ? '' : l)} className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${selectedLabel === l ? 'bg-purple-600 border-purple-400 text-white' : 'bg-white/5 border-white/10 text-white/50'}`}>🏷️ {l}</button>
           ))}
         </div>
 
         <div className="flex items-end gap-2">
           <div className="flex-1 rounded-3xl px-4 py-3 flex items-end gap-2 border bg-white/5 border-white/10 focus-within:border-purple-400/50">
-            <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-xl pb-0.5 flex-shrink-0 hover:scale-110 transition-transform">😊</button>
+            <button onClick={() => setShowFileUpload(true)} className="text-xl hover:scale-110 transition-transform">📎</button>
             <textarea
               value={input}
               onChange={handleTyping}
               onKeyDown={handleKeyDown}
-              placeholder={selectedLabel ? `Message with [${selectedLabel}] tag...` : "Message..."}
+              placeholder="Type encryption message vector blocks..."
               rows={1}
               style={{ resize: 'none', maxHeight: '100px' }}
-              className="flex-1 bg-transparent text-sm focus:outline-none leading-relaxed text-white placeholder-white/30"
+              className="flex-1 bg-transparent text-sm focus:outline-none text-white placeholder-white/30"
             />
-            <button onClick={() => setShowFileUpload(true)} className="text-xl pb-0.5 flex-shrink-0 hover:scale-110 transition-transform">📎</button>
-            <button onClick={() => setShowVoiceRecorder(true)} className="text-xl pb-0.5 flex-shrink-0 hover:scale-110 transition-transform">🎤</button>
           </div>
-          <button onClick={() => handleSend()} className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-full flex items-center justify-center transition-all transform hover:scale-105 shadow-lg shadow-purple-500/25 flex-shrink-0">
+          <button onClick={() => handleSend()} className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-lg shadow-purple-500/25">
             <span className="text-white font-bold text-lg">➤</span>
           </button>
         </div>
       </div>
-
-      {showFileUpload && <FileUpload onUpload={handleFileUpload} onClose={() => setShowFileUpload(false)} />}
-      {showVoiceRecorder && <VoiceRecorder onUpload={handleFileUpload} onClose={() => setShowVoiceRecorder(false)} />}
-      {viewingProfile && <ProfileModal viewingUser={viewingProfile} onClose={closeProfile} />}
-      {showWallpaperPicker && <WallpaperPicker chatId={chatId} currentWallpaper={wallpaper} onSelect={(url) => { setWallpaper(url); setShowWallpaperPicker(false); }} onClose={() => setShowWallpaperPicker(false)} />}
-      {showImageGenerator && <ImageGeneratorModal onSend={handleImageSend} onClose={() => setShowImageGenerator(false)} />}
-      {showBlockConfirm && <ConfirmModal title={`Block ${selectedUser?.name}?`} message="They won't be able to message you." confirmText="Block" danger onConfirm={async () => { await blockUser(selectedUser._id); setShowBlockConfirm(false); }} onCancel={() => setShowBlockConfirm(false)} />}
-      {activeCall && selectedUser && <VideoCall socket={socket} currentUser={user} selectedUser={selectedUser} onClose={() => setActiveCall(null)} isIncoming={activeCall.isIncoming} incomingSignal={activeCall.signal} isVoiceOnly={activeCall.type === 'voice'} />}
     </div>
   );
 }
