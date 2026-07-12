@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import axios from '../utils/axios';
 
@@ -18,9 +19,13 @@ const useChatStore = create((set, get) => ({
   msgSearchQuery: '',
   showMsgSearch: false,
   blockedUsers: [],
+  viewProfile: null,
   viewingProfile: null,
   wallpapers: {},
   showAIChat: false,
+
+  // CRITICAL MISSING LINK FIXED: Explicitly register the messages array wrapper modifier
+  setMessages: (messages) => set({ messages }),
 
   getContacts: async () => {
     try {
@@ -72,15 +77,24 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (messageData) => {
-    try {
-      const { data } = await axios.post('/messages', messageData);
-      set((state) => ({ messages: [...state.messages, data] }));
-      await get().getContacts();
-    } catch (error) {
-      console.error("Message transmission client error:", error);
-    }
-  },
+  // Filename: .\client\store\useChatStore.js
+
+sendMessage: async (messageData) => {
+  try {
+    // 1. API ko message bhejo
+    const { data } = await axios.post('/messages', messageData);
+    
+    // 2. CRITICAL: Yahan state ko update karo taaki message screen par dikhe
+    set((state) => ({ 
+      messages: [...state.messages, data] 
+    }));
+    
+    return data; // Success return karo
+  } catch (error) {
+    console.error("Message bhejne mein error:", error);
+    throw error;
+  }
+},
 
   addMessage: (message) => {
     set((state) => {
