@@ -1,16 +1,21 @@
-const CACHE_NAME = 'nexchat-pwa-v2-matrix';
+const CACHE_NAME = 'nexchat-pwa-v3-matrix';
 
+// Fallback core assets list for safe startup velocity
 const ASSETS_TO_CACHE = [
   '/',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  '/manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('📦 PWA Core Cache Shell Opened Safely');
+      // Using individually mapped elements to prevent structural addAll crashes if an asset is missing
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(asset => {
+          return cache.add(asset).catch(err => console.log(`Cache bypass logged for: ${asset}`, err));
+        })
+      );
     }).then(() => self.skipWaiting())
   );
 });
