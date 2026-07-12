@@ -20,7 +20,11 @@ const socketHandler = (io) => {
 
     socket.on('send-message', async (data) => {
       try {
-        const { sender, receiver, groupId, content, type, fileUrl, isSelfDestruct, selfDestructSeconds, replyTo } = data;
+        const {
+          sender, receiver, groupId, content, type, fileUrl,
+          isSelfDestruct, selfDestructSeconds, replyTo,
+          isForwarded, label
+        } = data;
 
         const message = await Message.create({
           sender,
@@ -34,6 +38,8 @@ const socketHandler = (io) => {
             ? new Date(Date.now() + selfDestructSeconds * 1000)
             : null,
           replyTo: replyTo || null,
+          isForwarded: isForwarded || false,
+          label: label || null,
           isSent: true,
           isScheduled: false,
         });
@@ -43,25 +49,26 @@ const socketHandler = (io) => {
           { path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } }
         ]);
 
-        if (receiver) {
+        if (groupId) {
+          // Sender already joined this room, so everyone (including sender) gets it once
+          io.to(groupId.toString()).emit('receive-message', populated);
+        } else if (receiver) {
           const receiverSocketId = onlineUsers.get(receiver);
           if (receiverSocketId) {
             io.to(receiverSocketId).emit('receive-message', populated);
-          }
-          if (!onlineUsers.has(receiver)) {
+          } else {
             await sendNotification(receiver, {
               title: `${populated.sender.name}`,
               body: type === 'text' ? content.substring(0, 80) : '📎 Sent an attachment',
               icon: '/icon-192.png',
             });
           }
+          // CRITICAL FIX: always echo back to sender's own socket too,
+          // otherwise the sender never sees their own sent message.
+          socket.emit('receive-message', populated);
+        } else {
+          socket.emit('receive-message', populated);
         }
-
-        if (groupId) {
-          socket.to(groupId).emit('receive-message', populated);
-        }
-
-        socket.emit('message-sent', populated);
       } catch (err) {
         console.error('Socket message error:', err.message);
       }

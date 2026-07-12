@@ -22,6 +22,8 @@ const messageSchema = new mongoose.Schema({
   isEdited: { type: Boolean, default: false },
   isDeleted: { type: Boolean, default: false },
   isPinned: { type: Boolean, default: false },
+  isForwarded: { type: Boolean, default: false },
+  label: { type: String, default: null },
   isSelfDestruct: { type: Boolean, default: false },
   selfDestructAt: { type: Date, default: null },
   scheduledAt: { type: Date, default: null },

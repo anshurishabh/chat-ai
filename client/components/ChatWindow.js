@@ -60,17 +60,34 @@ export default function ChatWindow({ onBack }) {
   const chatId = selectedUser?._id || selectedGroup?._id || '';
   const isLight = theme === 'light';
 
+  // FIX: register socket callbacks. onReceiveMessage now (1) always reads the
+  // CURRENT selected chat from the store (avoids stale-closure bugs) and
+  // (2) only appends the message if it actually belongs to the open chat.
   useEffect(() => {
     audioNotificationRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav');
-    
+
     setCallbacks({
       onIncomingCall: (data) => setIncomingCall(data),
       onCallEnded: () => { setActiveCall(null); setIncomingCall(null); },
       onReceiveMessage: (newMsg) => {
         if (!newMsg) return;
+
+        const { selectedUser: curUser, selectedGroup: curGroup } = useChatStore.getState();
+
+        const senderId = (newMsg.sender?._id || newMsg.sender || '').toString();
+        const receiverId = (newMsg.receiver?._id || newMsg.receiver || '').toString();
+        const groupIdOfMsg = (newMsg.groupId?._id || newMsg.groupId || '').toString();
+
+        const belongsToCurrentChat =
+          (curGroup && groupIdOfMsg && groupIdOfMsg === curGroup._id.toString()) ||
+          (curUser && !groupIdOfMsg && (
+            senderId === curUser._id.toString() || receiverId === curUser._id.toString()
+          ));
+
+        if (!belongsToCurrentChat) return;
+
         audioNotificationRef.current?.play().catch(() => {});
-        
-        // Fix: Ensure we don't duplicate messages
+
         useChatStore.setState((state) => {
           if (state.messages.some(m => m._id === newMsg._id)) return state;
           return { messages: [...state.messages, newMsg] };
@@ -91,7 +108,10 @@ export default function ChatWindow({ onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // FIX: handleSend optimized for performance and state consistency
+  // FIX: no more fake "temp" message + no more getMessages() refetch after send.
+  // We just emit through the socket; the server now always echoes the real
+  // saved message back (see socketHandler.js), and onReceiveMessage above
+  // appends it once it's actually confirmed in the DB — no more disappearing.
   const handleSend = async (text, customLabel) => {
     const content = text || input;
     if (!content.trim()) return;
@@ -114,24 +134,12 @@ export default function ChatWindow({ onBack }) {
       label: customLabel || selectedLabel || null
     };
 
-    // UI-level immediate optimistic update
-    const tempMsg = { ...payload, _id: 'temp-' + Date.now(), createdAt: new Date() };
-    setMessages([...messages, tempMsg]);
-
     setInput('');
     setSelectedLabel('');
     clearSmartReplies();
     clearReplyingTo();
 
-    try {
-      await sendMessage(payload);
-      // Let the socket listener handle the "real" message arrival, 
-      // but fetch once to ensure database sync
-      getMessages(selectedUser?._id || selectedGroup?._id); 
-    } catch (err) {
-      console.error("Message send fail:", err);
-      setInput(content);
-    }
+    sendMessage(payload);
   };
 
   const handleTriggerSummary = async () => {
@@ -152,7 +160,7 @@ export default function ChatWindow({ onBack }) {
 
   const executeForward = async (targetContactId) => {
     if (!forwardingMsg) return;
-    await sendMessage({
+    sendMessage({
       sender: user._id,
       content: forwardingMsg.content,
       type: forwardingMsg.type || 'text',

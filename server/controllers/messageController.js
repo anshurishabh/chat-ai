@@ -3,12 +3,10 @@ const User = require('../models/User');
 
 const sendMessage = async (req, res) => {
   try {
-    const { receiver, groupId, content, type, fileUrl, isSelfDestruct, selfDestructSeconds, replyTo, scheduledAt, label } = req.body;
+    const { receiver, groupId, content, type, fileUrl, isSelfDestruct, selfDestructSeconds, replyTo, scheduledAt, label, isForwarded } = req.body;
 
     const isScheduled = scheduledAt && new Date(scheduledAt) > new Date();
 
-    // Signal Protocol E2E Encryption Encryption Mask Matrix Simulation Layer (Libsodium Fallback style)
-    // Content body gets hashed into encrypted token strings on databases logs
     const dynamicKeyToken = "E2E_SECURE_CIPHER_XYZ_";
     const simulatedCiphertext = content ? Buffer.from(dynamicKeyToken + content).toString('base64') : '';
 
@@ -16,8 +14,8 @@ const sendMessage = async (req, res) => {
       sender: req.user._id,
       receiver: receiver || null,
       groupId: groupId || null,
-      content: content, // Remains dynamic on active real-time memory pipeline buffers
-      encryptedContent: simulatedCiphertext, // Strictly locked down as absolute crypt block inside DB
+      content: content,
+      encryptedContent: simulatedCiphertext,
       type: type || 'text',
       fileUrl: fileUrl || '',
       isSelfDestruct: isSelfDestruct || false,
@@ -26,7 +24,8 @@ const sendMessage = async (req, res) => {
       scheduledAt: isScheduled ? new Date(scheduledAt) : null,
       isScheduled: isScheduled || false,
       isSent: !isScheduled,
-      label: label || null
+      label: label || null,
+      isForwarded: isForwarded || false
     });
 
     await User.findByIdAndUpdate(req.user._id, { $inc: { 'messageStats.totalSent': 1 } });
@@ -37,7 +36,6 @@ const sendMessage = async (req, res) => {
       { path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } }
     ]);
 
-    // Mask name block layer if anonymous module tracker profile flag registers true values
     if (populated.sender && populated.sender.isAnonymous) {
       populated.sender.name = "Anonymous Ghost";
       populated.sender.avatar = "";
@@ -71,8 +69,7 @@ const getMessages = async (req, res) => {
         msg.content = '💣 This message self-destructed';
         await msg.save();
       }
-      
-      // Mask anonymous senders on message retrieval logs array stack iteration loops
+
       if (msg.sender && msg.sender.isAnonymous) {
         msg.sender.name = "Anonymous Ghost";
         msg.sender.avatar = "";
@@ -92,7 +89,7 @@ const getGroupMessages = async (req, res) => {
       .populate('sender', 'name avatar isAnonymous')
       .populate({ path: 'replyTo', select: 'content sender type', populate: { path: 'sender', select: 'name' } })
       .sort({ createdAt: 1 });
-      
+
     messages.forEach(msg => {
       if (msg.sender && msg.sender.isAnonymous) {
         msg.sender.name = "Anonymous Ghost";
