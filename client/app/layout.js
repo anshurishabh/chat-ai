@@ -2,11 +2,10 @@ import './globals.css'
 
 export const metadata = {
   title: 'NexChat — AI Powered Messenger',
-  description: 'Next generation AI chat application portfolio execution architecture layer matrix',
-  manifest: '/manifest.json', // Link manifest schema securely inside root layouts metadata
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
+  description: 'Next generation AI chat application',
+  icons: {
+    icon: '/logo.png', // Yahan tumhara logo load hoga
+    apple: '/logo.png',
     title: 'NexChat',
   },
 }
