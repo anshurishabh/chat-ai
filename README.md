@@ -27,7 +27,7 @@ A modern full-stack messaging platform inspired by **WhatsApp**, **Telegram**, a
 | 🚀 Frontend | https://chat-ai-18y1.vercel.app |
 | ⚙ Backend | https://nexchat-server-w5gq.onrender.com |
 | 📂 GitHub | https://github.com/anshurishabh/chat-ai |
-
+|🌐 Drive | https://drive.google.com/file/d/1uDRV-Y7SDtuKr0LB-xgJyuHL22ClqVBp/view?usp=drivesdk |
 ---
 
 ## 📸 Preview
