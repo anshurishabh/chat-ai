@@ -17,7 +17,7 @@ A modern full-stack messaging platform inspired by **WhatsApp**, **Telegram**, a
 </a>
 
 <a href="https://drive.google.com/file/d/1uDRV-Y7SDtuKr0LB-xgJyuHL22ClqVBp/view?usp=drivesdk">
-<img src="https://img.shields.io/badge/🚀%20Live%20Google-Drive-success?style=for-the-badge">
+<img src="https://img.shields.io/badge/💻%20Open%20Google-Drive-success?style=for-the-badge">
 </a>
 
 </p>
